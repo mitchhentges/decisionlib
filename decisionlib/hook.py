@@ -7,7 +7,7 @@ import slugid
 import taskcluster
 import yaml
 
-from decisionlib.decisionlib.common import SlugId
+from decisionlib.common import SlugId
 
 
 def schedule_hook(html_url: str, task_id: SlugId):
@@ -62,7 +62,7 @@ def schedule_hook(html_url: str, task_id: SlugId):
 
     task = rendered['tasks'][0]
     queue = taskcluster.Queue({'baseUrl': 'http://taskcluster/queue/v1'})
-    queue.createTask(task['taskId', task])
+    queue.createTask(task['taskId'], task)
 
 
 

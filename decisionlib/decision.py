@@ -9,7 +9,7 @@ from typing import Optional, Tuple, List, Any, Callable
 
 import taskcluster
 
-from decisionlib.decisionlib.common import SlugId
+from decisionlib.common import SlugId
 
 
 class TrustLevel(Enum):
