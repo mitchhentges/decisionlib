@@ -27,7 +27,7 @@ class Trigger:
     @staticmethod
     def from_environment():
         task_group_id = os.environ['DECISIONLIB_TASK_GROUP_ID']
-        level = TrustLevel('L' + os.environ['DECISIONLIB_TRUST_LEVEL'])
+        level = TrustLevel(int(os.environ['DECISIONLIB_TRUST_LEVEL']))
         owner = os.environ['DECISIONLIB_OWNER']
         source = os.environ['DECISIONLIB_SOURCE']
         return Trigger(task_group_id, level, owner, source)
@@ -46,7 +46,7 @@ class Checkout:
         remote = repo.remote()
         ref = repo.head.ref
 
-        if not remote.url.startswith('https:/github.com'):
+        if not remote.url.startswith('https://github.com'):
             raise RuntimeError('Expected remote to be a GitHub repository (accessed via HTTPs)')
 
         if remote.url.endswith('.git'):
@@ -60,6 +60,18 @@ class Checkout:
         return Checkout(product_id, html_url, str(ref), str(ref.commit))
 
 
+def write_cot_files(full_task_graph):
+    with open('task-graph.json', 'w') as f:
+        json.dump(full_task_graph, f)
+
+    # These files are needed to keep chainOfTrust happy. However, they are not needed
+    # for many projects at the moment. For more details, see:
+    # https://github.com/mozilla-releng/scriptworker/pull/209/files#r184180585
+    for file_names in ('actions.json', 'parameters.yml'):
+        with open(file_names, 'w') as f:
+            json.dump({}, f)
+
+
 class Scheduler:
     _tasks: List[Tuple[SlugId, 'Task']]
 
@@ -67,25 +79,13 @@ class Scheduler:
         self._tasks = []
 
     def append(self, task: 'Task'):
-        task_id = 'task_id'
+        task_id = taskcluster.slugId()
         self._tasks.append((task_id, task))
-        return 'task_id'
+        return task_id
 
     def append_all(self, tasks: List['Task']):
         for task in tasks:
             self.append(task)
-
-    @staticmethod
-    def write_cot_files(full_task_graph):
-        with open('task-graph.json', 'w') as f:
-            json.dump(full_task_graph, f)
-
-        # These files are needed to keep chainOfTrust happy. However, they are not needed
-        # for many projects at the moment. For more details, see:
-        # https://github.com/mozilla-releng/scriptworker/pull/209/files#r184180585
-        for file_names in ('actions.json', 'parameters.yml'):
-            with open(file_names, 'w') as f:
-                json.dump({}, f)
 
     def schedule_tasks(
             self,
@@ -172,6 +172,8 @@ class Task:
         self._dependencies = []
         self._scopes = []
         self._map_functions = []
+        self._priority = None
+        self._treeherder = None
 
     def with_description(self, description: str):
         self._description = description
@@ -238,7 +240,7 @@ class Task:
             map_function(self, context)
 
         return {
-            'scheduler_id': '{}-level-{}'.format(checkout.product_id, trigger.level),
+            'scheduler_id': '{}-level-{}'.format(checkout.product_id, trigger.level.value),
             'taskGroupId': trigger.task_group_id,
             'provisionerId': self._provisioner_id,
             'workerType': worker_type,
@@ -289,7 +291,6 @@ class AndroidArtifact:
 
 
 class ShellTask(Task):
-    _task: Task
     _image: str
     _script: str
     _artifacts: List[AndroidArtifact]
@@ -311,7 +312,7 @@ class ShellTask(Task):
         self._file_secrets = []
 
     def append_secret(self, secret):
-        self._task.append_scope('secrets:get:{}'.format(secret))
+        self.append_scope('secrets:get:{}'.format(secret))
         return self
 
     def append_file_secret(self, secret, key, target_file):
@@ -325,7 +326,7 @@ class ShellTask(Task):
             checkout: Checkout,
     ):
         if self._file_secrets:
-            fetch_file_secrets_commands = ['pip install mhentges-decisionlib'] + [
+            fetch_file_secrets_commands = ['pip install decisionlib-mhentges'] + [
                 'decisionlib get-secret {} {} > {}'.format(secret, key, target_file)
                 for secret, key, target_file in self._file_secrets
             ]
@@ -343,7 +344,7 @@ class ShellTask(Task):
                 *fetch_file_secrets_commands,
                 self._script
             ])
-            script = re.sub('\n +', '\n ', script)  # de-indent
+            script = re.sub('\n +', '\n', script)  # de-indent
 
             task.with_payload({
                 'features': {
@@ -361,7 +362,7 @@ class ShellTask(Task):
                 }
             })
 
-        self._task.map(configuration)
+        self.map(configuration)
         return super().compile(task_id, trigger, checkout)
 
 
