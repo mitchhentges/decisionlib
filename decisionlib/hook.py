@@ -13,17 +13,21 @@ from decisionlib.common import SlugId
 
 def clone(html_url, branch):
     subprocess.check_call(
-        'git clone {} --single-branch {} --depth 1'.format(html_url, branch),
+        'git clone {} repository --single-branch --branch {} --depth 1'.format(html_url, branch),
         shell=True
     )
 
 
 def checkout_revision(revision):
-    subprocess.check_call('git checkout {}'.format(revision), shell=True)
+    subprocess.check_call('git -C repository checkout {}'.format(revision), shell=True)
 
 
 def fetch_revision():
-    return subprocess.check_output('git rev-parse --verify HEAD', encoding='utf-8', shell=True)
+    return subprocess.check_output(
+        'git -C repository rev-parse --verify HEAD',
+        encoding='utf-8',
+        shell=True
+    )
 
 
 def schedule_hook(task_id: SlugId, html_url: str, branch: str, revision: str = None):
