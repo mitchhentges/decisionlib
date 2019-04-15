@@ -2,6 +2,7 @@ import datetime
 import os
 import subprocess
 
+import git
 import jsone
 import slugid
 import taskcluster
@@ -10,12 +11,22 @@ import yaml
 from decisionlib.common import SlugId
 
 
-def fetch_revision(html_url, ref):
-    output = subprocess.getoutput('git ls-remote {} {}'.format(html_url, ref))
-    return output.split('\t')[0]
+def clone(html_url, branch):
+    subprocess.check_call(
+        'git clone {} --single-branch {} --depth 1'.format(html_url, branch),
+        shell=True
+    )
 
 
-def schedule_hook(task_id: SlugId, html_url: str, ref: str, revision: str = None):
+def checkout_revision(revision):
+    subprocess.check_call('git checkout {}'.format(revision), shell=True)
+
+
+def fetch_revision():
+    return subprocess.check_output('git rev-parse --verify HEAD', encoding='utf-8', shell=True)
+
+
+def schedule_hook(task_id: SlugId, html_url: str, branch: str, revision: str = None):
     if not html_url.startswith('https://github.com/'):
         raise ValueError('expected repository to be a GitHub repository (accessed via HTTPs)')
 
@@ -23,8 +34,11 @@ def schedule_hook(task_id: SlugId, html_url: str, ref: str, revision: str = None
     html_url = html_url[:-1] if html_url.endswith('/') else html_url
 
     repository_full_name = html_url[len('https://github.com/'):]
-    if not revision:
-        revision = fetch_revision(html_url, ref)
+    clone(html_url, branch)
+    if revision:
+        checkout_revision(revision)
+    else:
+        revision = fetch_revision()
 
     with open(os.path.join('repository', '.taskcluster.yml'), 'rb') as f:
         taskcluster_yml = yaml.safe_load(f)
@@ -51,7 +65,7 @@ def schedule_hook(task_id: SlugId, html_url: str, ref: str, revision: str = None
             },
             'release': {
                 'tag_name': revision,
-                'target_commitish': ref,
+                'target_commitish': 'refs/heads/{}'.format(branch),
             },
             'sender': {
                 'login': 'TaskclusterHook',

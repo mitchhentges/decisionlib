@@ -14,7 +14,7 @@ def main():
     hook_parser = command_subparser.add_parser('schedule-hook')
     hook_parser.add_argument('task_id')
     hook_parser.add_argument('repository')
-    hook_parser.add_argument('--ref', default='refs/heads/master')
+    hook_parser.add_argument('--branch', default='master')
     hook_parser.add_argument('--revision')
 
     secret_parser = command_subparser.add_parser('get-secret')
