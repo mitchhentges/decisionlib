@@ -26,6 +26,15 @@ class Trigger:
 
     @staticmethod
     def from_environment():
+        """Collects "DECISIONLIB_*" environment variables to create a Trigger
+
+        Assumes that "DECISIONLIB_TASK_GROUP_ID", "DECISIONLIB_TRUST_LEVEL", "DECISIONLIB_OWNER"
+        and "DECISIONLIB_SOURCE" are all set as environment variables
+
+        Returns:
+            Trigger: details of the cause of this build
+
+        """
         task_group_id = os.environ['DECISIONLIB_TASK_GROUP_ID']
         level = TrustLevel(int(os.environ['DECISIONLIB_TRUST_LEVEL']))
         owner = os.environ['DECISIONLIB_OWNER']
@@ -42,6 +51,14 @@ class Checkout:
 
     @staticmethod
     def from_cwd():
+        """Produces checkout information by checking the git repository in the current directory
+
+        Assumes that the "origin" remote is a GitHub HTTPS URL
+
+        Returns:
+            Checkout: current source control information
+
+        """
         repo = Repo(os.getcwd())
         remote = repo.remote()
         ref = repo.head.ref
@@ -73,13 +90,14 @@ def write_cot_files(full_task_graph):
 
 
 class Scheduler:
+    """Assigns IDs to tasks and batch-schedules them"""
     _tasks: List[Tuple[SlugId, 'Task']]
 
     def __init__(self):
         self._tasks = []
 
     def append(self, task: 'Task'):
-        task_id = taskcluster.slugId()
+        task_id = taskcluster.slugId().decode('utf-8')
         self._tasks.append((task_id, task))
         return task_id
 
@@ -94,10 +112,21 @@ class Scheduler:
             checkout: Checkout,
             write_cot_files=write_cot_files
     ):
+        """Schedules all tasks in the order that they were provided to the scheduler
+
+        Args:
+            queue: taskcluster queue to append tasks to
+            trigger: the details of the action that triggered this build
+            checkout: source control information for the current revision
+            write_cot_files: method of encoding Chain of Trust files
+
+        Returns:
+
+        """
         full_task_graph = {}
 
         for task_id, task in self._tasks:
-            task = task.compile(task_id, trigger, checkout)
+            task = task.render(task_id, trigger, checkout)
             queue.createTask(task_id, task)
             full_task_graph[task_id] = {
                 'task': queue.task(task_id)
@@ -187,32 +216,32 @@ class Task:
         self._payload = payload
         return self
 
-    def with_routes(self, routes: List[str]):
-        self._routes = routes
-        return self
-
     def append_route(self, route: str):
         self._routes.append(route)
         return self
 
-    def with_scopes(self, scopes: List[str]):
-        self._scopes = scopes
+    def append_routes(self, routes: List[str]):
+        self._routes.extend(routes)
         return self
 
     def append_scope(self, scope: str):
         self._scopes.append(scope)
         return self
 
-    def with_dependencies(self, dependencies: List[SlugId]):
-        self._dependencies = dependencies
+    def append_scopes(self, scopes: List[str]):
+        self._scopes.extend(scopes)
         return self
 
     def append_dependency(self, dependency: SlugId):
         self._dependencies.append(dependency)
         return self
 
+    def append_dependencies(self, dependencies: List[SlugId]):
+        self._dependencies.extend(dependencies)
+        return self
+
     def with_notify_owner(self):
-        self.map(lambda task, context: task.append_route(
+        return self.map(lambda task, context: task.append_route(
             'notify.email.{}.on-failed'.format(context.trigger.owner)))
 
     def with_treeherder(self, job_kind: str, machine_platform: str, tier: int, symbol: str,
@@ -228,12 +257,25 @@ class Task:
     def schedule(self, scheduler: Scheduler):
         return scheduler.append(self)
 
-    def compile(
+    def render(
             self,
             task_id: SlugId,
             trigger: Trigger,
             checkout: Checkout,
     ):
+        """Produces raw Taskcluster task definition
+
+        Should only be called by Scheduler
+
+        Args:
+            task_id: id of task
+            trigger: details around the cause of this build
+            checkout: source control information
+
+        Returns:
+            dict: raw taskcluster task definition
+
+        """
         context = ConfigurationContext(checkout.product_id, checkout, trigger)
         worker_type = self._decide_worker_type(trigger.level)
         for map_function in self._map_functions:
@@ -278,16 +320,22 @@ class ArtifactType(Enum):
 
 class AndroidArtifact:
     taskcluster_path: str
-    output_path: str
+    outputs_apk_path: str
     type: ArtifactType
 
-    def __init__(self, public_path: str, output_path: str):
+    def __init__(self, public_path: str, outputs_apk_path: str):
+        """
+
+        Args:
+            public_path: path of artifact on Taskcluster
+            outputs_apk_path: path to apk within gradle's "outputs/apks/
+        """
         self.taskcluster_path = public_path
-        self.output_path = output_path
+        self.outputs_apk_path = outputs_apk_path
         self.type = ArtifactType.FILE
 
     def fs_path(self, product_id: str):
-        return '/build/{}/app/build/outputs/apk/{}'.format(product_id, self.output_path)
+        return '/build/{}/app/build/outputs/apk/{}'.format(product_id, self.outputs_apk_path)
 
 
 class ShellTask(Task):
@@ -303,15 +351,22 @@ class ShellTask(Task):
             decide_worker_type: Callable[[TrustLevel], str],
             image: str,
             script: str,
-            artifacts: List[AndroidArtifact]
     ):
         super().__init__(name, provisioner_id, decide_worker_type)
         self._image = image
         self._script = script
-        self._artifacts = artifacts
+        self._artifacts = []
         self._file_secrets = []
 
-    def append_secret(self, secret):
+    def append_artifact(self, artifact: AndroidArtifact):
+        self._artifacts.append(artifact)
+        return self
+
+    def append_artifacts(self, artifacts: List[AndroidArtifact]):
+        self._artifacts.extend(artifacts)
+        return self
+
+    def append_secret(self, secret: str):
         self.append_scope('secrets:get:{}'.format(secret))
         return self
 
@@ -319,7 +374,7 @@ class ShellTask(Task):
         self._file_secrets.append((secret, key, target_file))
         return self.append_secret(secret)
 
-    def compile(
+    def render(
             self,
             task_id: SlugId,
             trigger: Trigger,
@@ -363,15 +418,24 @@ class ShellTask(Task):
             })
 
         self.map(configuration)
-        return super().compile(task_id, trigger, checkout)
+        return super().render(task_id, trigger, checkout)
 
 
 def shell_task(
         name: str,
         image: str,
         script: str,
-        artifacts: List[AndroidArtifact] = (),
 ):
+    """Builds task that runs as shell commands in a docker container
+
+    Args:
+        name: name of task
+        image: docker image
+        script: commands to run within the container
+
+    Returns:
+        ShellTask: shell task builder
+    """
     def decide_worker_type(level: TrustLevel):
         return 'mobile-{}-b-ref-browser'.format(level.value)
 
@@ -381,7 +445,6 @@ def shell_task(
         decide_worker_type,
         image,
         script,
-        artifacts
     )
 
 
@@ -396,6 +459,17 @@ def sign_task(
         signing_type: SigningType,
         artifacts: List[Tuple[SlugId, List[str]]],
 ):
+    """Builds task that runs within "mobile-signing-(dep-)v1" workers
+
+    Args:
+        name: name of task
+        signing_format: signing format, such as "autograph_apk"
+        signing_type: what type of signing key should be used
+        artifacts: task id and path to apks that this task will sign
+
+    Returns:
+        Task: task builder
+    """
     payload = {
         'upstreamArtifacts': [{
             'paths': apk_paths,
@@ -412,7 +486,7 @@ def sign_task(
         return 'mobile-signing-dep-v1' if signing_type == SigningType.DEP else 'mobile-signing-v1'
 
     return Task(name, 'scriptworker-prov-v1', decide_worker_type, payload) \
-        .with_dependencies([assemble_task_id for assemble_task_id, _ in artifacts]) \
+        .append_dependencies([assemble_task_id for assemble_task_id, _ in artifacts]) \
         .map(
         lambda task, context: task.with_scopes([
             'project:mobile:{}:releng:signing:format:{}'.format(
@@ -427,6 +501,16 @@ def google_play_task(
         track: str,
         artifacts: List[Tuple[SlugId, List[str]]],
 ):
+    """Builds task that runs within "mobile-pushapk-(dep-)v1" workers
+
+    Args:
+        name: name of task
+        track: Google Play track
+        artifacts: task id and path to apks that this task will push to Google Play
+
+    Returns:
+        Task: task builder
+    """
     payload = {
         'commit': True,
         'google_play_track': track,
@@ -441,7 +525,7 @@ def google_play_task(
         return 'mobile-pushapk-dep-v1' if level == TrustLevel.L1 else 'mobile-pushapk-v1'
 
     return Task(name, 'scriptworker-prov-v1', decide_worker_type, payload) \
-        .with_dependencies([signing_task_id for signing_task_id, _ in artifacts]) \
+        .append_dependencies([signing_task_id for signing_task_id, _ in artifacts]) \
         .map(
         lambda task, context: task.with_scopes([
             'project:mobile:{name}:releng:googleplay:product:{name}{type}'.format(
@@ -452,6 +536,7 @@ def google_play_task(
 
 
 class RemoteArtifact:
+    """Represents direct URL to artifact on Taskcluster"""
     def __init__(self, task_id: str, path: str):
         self.task_id = task_id
         self.path = path
@@ -463,7 +548,7 @@ class RemoteArtifact:
 
 def raptor_task(
         name: str,
-        signed_apk: RemoteArtifact,
+        signed_apk: Tuple[SlugId, str],
         mozharness_task_id: str,
         is_arm: bool,
         raptor_app_id: str,
@@ -471,6 +556,22 @@ def raptor_task(
         activity_class_name: str,
         gecko_revision: str,
 ):
+    """Builds raptor performance-testing task
+
+    Args:
+        name: name of task
+        signed_apk: id of signing task and path to apk
+        mozharness_task_id: id of mozharness task
+        is_arm: true if signed apk uses the ARM abi
+        raptor_app_id: raptor-specific app identifier
+        package_name: package name
+        activity_class_name: activity to test
+        gecko_revision: gecko revision
+
+    Returns:
+        Task: task builder
+    """
+    signed_apk = RemoteArtifact(signed_apk[0], signed_apk[1])
     worker_type = 'gecko-t-ap-perf-g5' if is_arm else 'gecko-t-ap-perf-p2'
     artifacts = [{
         'path': '/builds/worker/{}'.format(worker_path),
