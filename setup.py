@@ -5,12 +5,13 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
     name='decisionlib-mhentges',
-    version='0.0.5',
+    version='0.0.6',
     author='Mozilla Release Engineering',
     author_email='release+python@mozilla.com',
     description='Taskcluster task-builder',
     packages=setuptools.find_packages(),
     install_requires=requirements,
+    include_package_data=True,
     entry_points={
         'console_scripts': [
             'decisionlib = decisionlib:main',
