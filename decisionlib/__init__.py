@@ -23,7 +23,7 @@ def main():
 
     result = parser.parse_args()
     if result.command == 'schedule-hook':
-        schedule_hook(result.task_id, result.repository, result.ref, result.revision)
+        schedule_hook(result.task_id, result.repository, result.branch, result.revision)
     if result.command == 'get-secret':
         print(fetch_secret(result.secret, result.key))
 
