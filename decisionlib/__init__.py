@@ -12,8 +12,8 @@ def main():
     command_subparser.required = True
 
     hook_parser = command_subparser.add_parser('schedule-hook')
-    hook_parser.add_argument('repository')
     hook_parser.add_argument('task_id')
+    hook_parser.add_argument('repository')
     hook_parser.add_argument('--ref', default='refs/heads/master')
     hook_parser.add_argument('--revision')
 
