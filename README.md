@@ -33,7 +33,20 @@ def main():
 
 ## Within hook
 
-Update `payload.command` to run `pip install decisionlib && decisionlib schedule-hook  
+Update `payload.command` to run `pip install decisionlib && decisionlib schedule-hook`
+
+## Within shell task
+
+`decisionlib` has the ability to fetch secrets from taskcluster from either the command line or via python import.
+
+`pip install decisionlib && decisionlib get-secret /project/mobile/fenix/sentry api_key`
+
+or
+
+```python
+from decisionlib.shell import fetch_secret
+fetch_secret('/project/mobile/fenix/sentry', 'api_key')
+```
 
 
 ### Usage:
