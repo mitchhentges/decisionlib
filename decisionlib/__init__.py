@@ -12,14 +12,14 @@ def main():
     command_subparser.required = True
 
     hook_parser = command_subparser.add_parser('schedule-hook')
-    hook_parser.add_argument('repository', required=True)
-    hook_parser.add_argument('task_id', required=True)
-    hook_parser.add_argument('ref', default='refs/heads/master')
-    hook_parser.add_argument('revision')
+    hook_parser.add_argument('repository')
+    hook_parser.add_argument('task_id')
+    hook_parser.add_argument('--ref', default='refs/heads/master')
+    hook_parser.add_argument('--revision')
 
     secret_parser = command_subparser.add_parser('get-secret')
-    secret_parser.add_argument('secret', help='name of the secret', required=True)
-    secret_parser.add_argument('key', help='key of the secret', required=True)
+    secret_parser.add_argument('secret', help='name of the secret')
+    secret_parser.add_argument('key', help='key of the secret')
 
     result = parser.parse_args()
     if result.command == 'schedule-hook':
