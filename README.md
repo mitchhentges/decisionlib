@@ -4,6 +4,8 @@ Taskcluster utility library for building reusable tasks.
 
 :rotating_light: Note: this is experimental, and we might not use this within releng :rotating_light:
 
+## Within decision task
+
 ### Example
 
 ```python
@@ -29,8 +31,13 @@ def main():
     scheduler.schedule_tasks(queue, trigger, checkout)
 ```
 
+## Within hook
+
+Update `payload.command` to run `pip install decisionlib && decisionlib schedule-hook  
+
+
 ### Usage:
 
 1. `pip install decisionlib-mhentges`
-2. Write your python to schedule tasks, such as shown in the example above
+2. Write your python decision task to schedule tasks
 3. Run your python script on Taskcluster, such as with a [hook](https://taskcluster-web.netlify.com/hooks)

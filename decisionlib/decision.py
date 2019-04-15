@@ -620,3 +620,6 @@ def raptor_task(
     return Task(name, 'proj-autophone', lambda _: worker_type) \
         .append_dependency(signed_apk.task_id) \
         .with_payload(payload)
+
+def name():
+    return __name__
