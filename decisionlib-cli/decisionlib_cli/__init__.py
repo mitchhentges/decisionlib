@@ -1,7 +1,7 @@
 import argparse
 
-from decisionlib.hook import schedule_hook
-from decisionlib.shell import fetch_secret
+from hook import schedule_hook
+from shell import fetch_secret
 
 
 def main():
