@@ -4,17 +4,18 @@ with open('requirements.txt') as f:
     requirements = [line.rstrip('\n') for line in f if not line.startswith('#')]
 
 setuptools.setup(
-    name='decisionlib-mhentges',
-    version='0.0.13',
+    name='decisionlib-cli-mhentges',
+    version='0.0.1',
     author='Mozilla Release Engineering',
     author_email='release+python@mozilla.com',
     description='Taskcluster task-builder',
     packages=setuptools.find_packages(),
     install_requires=requirements,
     include_package_data=True,
+    python_requires='~=2.7',
     entry_points={
         'console_scripts': [
-            'decisionlib = decisionlib:main',
+            'decisionlib-cli = decisionlib:main',
         ],
     },
 )

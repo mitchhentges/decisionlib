@@ -5,27 +5,9 @@ from decisionlib.shell import fetch_secret
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Schedule tasks or request secrets from taskcluster'
-    )
-    command_subparser = parser.add_subparsers(dest='command')
-    command_subparser.required = True
-
-    hook_parser = command_subparser.add_parser('schedule-hook')
-    hook_parser.add_argument('task_id')
-    hook_parser.add_argument('repository')
-    hook_parser.add_argument('--branch', default='master')
-    hook_parser.add_argument('--revision')
-
-    secret_parser = command_subparser.add_parser('get-secret')
-    secret_parser.add_argument('secret', help='name of the secret')
-    secret_parser.add_argument('key', help='key of the secret')
-
-    result = parser.parse_args()
-    if result.command == 'schedule-hook':
-        schedule_hook(result.task_id, result.repository, result.branch, result.revision)
-    if result.command == 'get-secret':
-        print(fetch_secret(result.secret, result.key))
+    print('"decisionlib" is just a (py3) library, you need (py2) "decisionlib-cli" to schedule'
+          'hook decision tasks or use helper utilities')
+    exit(1)
 
 
 if __name__ == '__main__':

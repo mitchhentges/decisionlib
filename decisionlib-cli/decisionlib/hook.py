@@ -2,13 +2,10 @@ import datetime
 import os
 import subprocess
 
-import git
 import jsone
 import slugid
 import taskcluster
 import yaml
-
-from decisionlib.common import SlugId
 
 
 def clone(html_url, branch):
@@ -25,12 +22,11 @@ def checkout_revision(revision):
 def fetch_revision():
     return subprocess.check_output(
         'git -C repository rev-parse --verify HEAD',
-        encoding='utf-8',
         shell=True
     )
 
 
-def schedule_hook(task_id: SlugId, html_url: str, branch: str, revision: str = None):
+def schedule_hook(task_id, html_url, branch, revision):
     if not html_url.startswith('https://github.com/'):
         raise ValueError('expected repository to be a GitHub repository (accessed via HTTPs)')
 

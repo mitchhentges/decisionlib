@@ -1,4 +1,4 @@
-from decisionlib.decision import *
+from decisionlib.decisionlib.decisionlib import *
 
 
 def main():

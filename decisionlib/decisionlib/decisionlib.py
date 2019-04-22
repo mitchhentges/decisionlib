@@ -10,7 +10,7 @@ from typing import Optional, Tuple, List, Any, Callable, Union, Dict
 import sys
 import taskcluster
 
-from decisionlib.common import SlugId
+SlugId = str
 
 
 class TrustLevel(Enum):
