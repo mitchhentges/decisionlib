@@ -345,7 +345,7 @@ class Task:
             map_function(self, context)
 
         raw_task = {
-            'scheduler_id': '{}-level-{}'.format(checkout.alias, trigger.level.value),
+            'schedulerId': '{}-level-{}'.format(checkout.alias, trigger.level.value),
             'taskGroupId': trigger.task_group_id,
             'provisionerId': self._provisioner_id,
             'workerType': worker_type,
