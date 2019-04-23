@@ -23,7 +23,7 @@ def fetch_revision():
     return subprocess.check_output(
         'git -C repository rev-parse --verify HEAD',
         shell=True
-    )
+    ).strip()
 
 
 def schedule_hook(task_id, html_url, branch, revision):
