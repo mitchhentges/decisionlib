@@ -19,8 +19,8 @@ class TrustLevel(Enum):
 
 
 class Trigger:
-    def __init__(self, decision_task_id: SlugId, level: TrustLevel, owner: str, source: str):
-        self.task_id = decision_task_id
+    def __init__(self, task_group_id: SlugId, level: TrustLevel, owner: str, source: str):
+        self.task_group_id = task_group_id
         self.level = level
         self.owner = owner
         self.source = source
@@ -36,11 +36,11 @@ class Trigger:
             Trigger: details of the cause of this build
 
         """
-        task_id = os.environ['DECISIONLIB_TASK_ID']
+        task_group_id = os.environ['DECISIONLIB_TASK_GROUP_ID']
         level = TrustLevel(int(os.environ['DECISIONLIB_TRUST_LEVEL']))
         owner = os.environ['DECISIONLIB_OWNER']
         source = os.environ['DECISIONLIB_SOURCE']
-        return Trigger(task_id, level, owner, source)
+        return Trigger(task_group_id, level, owner, source)
 
 
 class Checkout:
@@ -342,7 +342,7 @@ class Task:
 
         raw_task = {
             'scheduler_id': '{}-level-{}'.format(checkout.alias, trigger.level.value),
-            'taskGroupId': trigger.task_id,
+            'taskGroupId': trigger.task_group_id,
             'provisionerId': self._provisioner_id,
             'workerType': worker_type,
             'metadata': {
@@ -352,7 +352,7 @@ class Task:
                 'source': trigger.source,
             },
             'routes': self._routes,
-            'dependencies': [trigger.task_id] + self._dependencies,
+            'dependencies': [trigger.task_group_id] + self._dependencies,
             'scopes': self._scopes,
             'payload': self._payload or {},
             'priority': self._priority.value if self._priority else None,
