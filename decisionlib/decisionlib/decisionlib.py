@@ -126,8 +126,8 @@ class Scheduler:
     def schedule_tasks(
             self,
             queue,
-            trigger: Trigger,
-            checkout: Checkout,
+            checkout: Checkout = Checkout.from_environment(),
+            trigger: Trigger = Trigger.from_environment(),
             write_cot_files: Callable[[Dict], None] = write_cot_files
     ):
         """Schedules all tasks in the order that they were provided to the scheduler
