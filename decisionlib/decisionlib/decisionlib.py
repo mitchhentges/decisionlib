@@ -54,7 +54,7 @@ class Checkout:
         self.commit = commit
 
     @staticmethod
-    def from_environment():
+    def from_environment(remote: str = None):
         """Produces checkout information by checking the git repository in the current directory
 
         Assumes that the "origin" remote is a GitHub HTTPS URL
@@ -64,19 +64,19 @@ class Checkout:
 
         """
         repo = Repo(os.getcwd())
-        remote = repo.remote()
+        remote = remote or repo.remote().url
         ref = os.environ.get('DECISIONLIB_CHECKOUT_REF', 'refs/heads/master')
-        if not remote.url.startswith('https://github.com'):
+        if not remote.startswith('https://github.com'):
             raise RuntimeError('Expected remote to be a GitHub repository (accessed via HTTPs)')
 
-        if remote.url.endswith('.git'):
-            html_url = remote.url[:-4]
-        elif remote.url.endswith('/'):
-            html_url = remote.url[:-1]
+        if remote.endswith('.git'):
+            html_url = remote[:-4]
+        elif remote.endswith('/'):
+            html_url = remote[:-1]
         else:
-            html_url = remote.url
+            html_url = remote
 
-        alias = remote.url.split('/')[-1]
+        alias = remote.split('/')[-1]
         return Checkout(alias, html_url, str(ref), repo.head.object.hexsha)
 
 
@@ -119,7 +119,7 @@ class Scheduler:
         Returns:
 
         """
-        trigger = Trigger('<task group id>', level, '<owner>', '<source>')
+        trigger = Trigger('<task group id>', '<scheduler_id>', level, '<owner>', '<source>')
         checkout = Checkout('<product id>', '<html url>', '<ref>', '<commit>')
         for task_id, task in self._tasks:
             task = task.render(task_id, trigger, checkout)
@@ -576,7 +576,7 @@ def sign_task(
         lambda task, context: task.with_scopes([
             'project:mobile:{}:releng:signing:format:{}'.format(
                 context.alias, signing_format),
-            'project:mobile:{}:releng:signing:cert:{}'.format(
+            'project:mobile:{}:releng:signing:cert:{}-signing'.format(
                 context.alias, signing_type.value),
         ]))
 
