@@ -63,7 +63,6 @@ class Checkout:
         repo = Repo(os.getcwd())
         remote = repo.remote()
         ref = os.environ.get('DECISIONLIB_CHECKOUT_REF', 'refs/heads/master')
-
         if not remote.url.startswith('https://github.com'):
             raise RuntimeError('Expected remote to be a GitHub repository (accessed via HTTPs)')
 
@@ -75,7 +74,7 @@ class Checkout:
             html_url = remote.url
 
         alias = remote.url.split('/')[-1]
-        return Checkout(alias, html_url, str(ref), str(ref.commit))
+        return Checkout(alias, html_url, str(ref), repo.head.object.hexsha)
 
 
 def write_cot_files(full_task_graph):
