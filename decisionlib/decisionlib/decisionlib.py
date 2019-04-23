@@ -125,8 +125,8 @@ class Scheduler:
     def schedule_tasks(
             self,
             queue,
-            checkout: Checkout = Checkout.from_environment(),
-            trigger: Trigger = Trigger.from_environment(),
+            checkout: Optional[Checkout],
+            trigger: Optional[Trigger],
             write_cot_files: Callable[[Dict], None] = write_cot_files
     ):
         """Schedules all tasks in the order that they were provided to the scheduler
@@ -143,6 +143,10 @@ class Scheduler:
         Returns:
 
         """
+        # These aren't default parameters because that would cause them to be evaluated, regardless
+        # of it they're used
+        checkout = checkout or Checkout.from_environment()
+        trigger = trigger or Trigger.from_environment()
         full_task_graph = {}
 
         for task_id, task in self._tasks:
