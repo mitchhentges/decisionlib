@@ -51,7 +51,7 @@ class Checkout:
         self.commit = commit
 
     @staticmethod
-    def from_cwd():
+    def from_environment():
         """Produces checkout information by checking the git repository in the current directory
 
         Assumes that the "origin" remote is a GitHub HTTPS URL
@@ -62,7 +62,7 @@ class Checkout:
         """
         repo = Repo(os.getcwd())
         remote = repo.remote()
-        ref = repo.head.ref
+        ref = os.environ.get('DECISIONLIB_CHECKOUT_REF', 'refs/heads/master')
 
         if not remote.url.startswith('https://github.com'):
             raise RuntimeError('Expected remote to be a GitHub repository (accessed via HTTPs)')
@@ -407,7 +407,7 @@ class AndroidArtifact:
         return '/build/{}/app/build/outputs/apk/{}'.format(alias, self.outputs_apk_path)
 
 
-class ShellTask(Task):
+class MobileShellTask(Task):
     _image: str
     _script: str
     _artifacts: List[AndroidArtifact]
@@ -506,13 +506,13 @@ def mobile_shell_task(
             in "mobile-1-b-ref-browser"
 
     Returns:
-        ShellTask: shell task builder
+        MobileShellTask: shell task builder
     """
 
     def decide_worker_type(level: TrustLevel):
         return 'mobile-{}-b-{}'.format(level.value, worker_type_suffix)
 
-    return ShellTask(
+    return MobileShellTask(
         task_name,
         'aws-provisioner-v1',
         decide_worker_type,
