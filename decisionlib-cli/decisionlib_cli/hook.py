@@ -26,7 +26,7 @@ def fetch_revision():
     ).strip()
 
 
-def schedule_hook(task_id, html_url, branch, revision):
+def schedule_hook(task_id, html_url, branch, revision, dry_run):
     if not html_url.startswith('https://github.com/'):
         raise ValueError('expected repository to be a GitHub repository (accessed via HTTPs)')
 
@@ -79,9 +79,9 @@ def schedule_hook(task_id, html_url, branch, revision):
                            .format(html_url))
 
     task = rendered['tasks'][0]
-    queue = taskcluster.Queue({'baseUrl': 'http://taskcluster/queue/v1'})
-    queue.createTask(task['taskId'], task)
 
-
-
-
+    if not dry_run:
+        queue = taskcluster.Queue({'baseUrl': 'http://taskcluster/queue/v1'})
+        queue.createTask(task.pop('taskId'), task)
+    else:
+        print(task)

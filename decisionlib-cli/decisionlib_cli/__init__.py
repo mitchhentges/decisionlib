@@ -16,6 +16,7 @@ def main():
     hook_parser.add_argument('repository')
     hook_parser.add_argument('--branch', default='master')
     hook_parser.add_argument('--revision')
+    hook_parser.add_argument('--dry-run', action='store_true')
 
     secret_parser = command_subparser.add_parser('get-secret')
     secret_parser.add_argument('secret', help='name of the secret')
@@ -23,7 +24,8 @@ def main():
 
     result = parser.parse_args()
     if result.command == 'schedule-hook':
-        schedule_hook(result.task_id, result.repository, result.branch, result.revision)
+        schedule_hook(result.task_id, result.repository, result.branch, result.revision,
+                      result.dry_run)
     if result.command == 'get-secret':
         print(fetch_secret(result.secret, result.key))
 
