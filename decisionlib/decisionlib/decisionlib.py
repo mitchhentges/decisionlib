@@ -19,8 +19,10 @@ class TrustLevel(Enum):
 
 
 class Trigger:
-    def __init__(self, task_group_id: SlugId, level: TrustLevel, owner: str, source: str):
+    def __init__(self, task_group_id: SlugId, scheduler_id: str, level: TrustLevel, owner: str,
+                 source: str):
         self.task_group_id = task_group_id
+        self.scheduler_id = scheduler_id
         self.level = level
         self.owner = owner
         self.source = source
@@ -37,10 +39,11 @@ class Trigger:
 
         """
         task_group_id = os.environ['DECISIONLIB_TASK_GROUP_ID']
+        scheduler_id = os.environ['DECISIONLIB_SCHEDULER_ID']
         level = TrustLevel(int(os.environ['DECISIONLIB_TRUST_LEVEL']))
         owner = os.environ['DECISIONLIB_OWNER']
         source = os.environ['DECISIONLIB_SOURCE']
-        return Trigger(task_group_id, level, owner, source)
+        return Trigger(task_group_id, scheduler_id, level, owner, source)
 
 
 class Checkout:
@@ -345,7 +348,7 @@ class Task:
             map_function(self, context)
 
         raw_task = {
-            'schedulerId': '{}-level-{}'.format(checkout.alias, trigger.level.value),
+            'schedulerId': trigger.scheduler_id,
             'taskGroupId': trigger.task_group_id,
             'provisionerId': self._provisioner_id,
             'workerType': worker_type,
