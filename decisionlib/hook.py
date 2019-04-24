@@ -22,7 +22,8 @@ def checkout_revision(revision):
 def fetch_revision():
     return subprocess.check_output(
         'git -C repository rev-parse --verify HEAD',
-        shell=True
+        encoding='utf=8',
+        shell=True,
     ).strip()
 
 
