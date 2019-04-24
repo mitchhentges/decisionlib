@@ -449,6 +449,15 @@ class MobileShellTask(Task):
         self._file_secrets.append((secret, key, target_file))
         return self.with_secret(secret)
 
+    def with_install_python_3(self):
+        self._script = '''
+        apt install python3-pip
+        alias pip=pip3
+        alias python=python3
+        {}
+        '''.format(self._script)
+        return self
+
     def render(
             self,
             task_id: SlugId,
