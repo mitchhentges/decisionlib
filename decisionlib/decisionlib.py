@@ -477,6 +477,7 @@ class MobileShellTask(Task):
             script = re.sub('\n +', '\n', script)  # de-indent
 
             task.with_payload({
+                'maxRunTime': 86400,
                 'features': {
                     'chainOfTrust': True if self._artifacts else False,
                     'taskclusterProxy': True if self._file_secrets else False,
