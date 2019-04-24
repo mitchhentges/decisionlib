@@ -81,7 +81,7 @@ def schedule_hook(task_id, html_url, branch, revision, dry_run):
     task = rendered['tasks'][0]
 
     if not dry_run:
-        queue = taskcluster.Queue({'rootUrl': 'https://taskcluster.net'})
+        queue = taskcluster.Queue({'rootUrl': os.environ['TASKCLUSTER_PROXY_URL']})
         queue.createTask(task.pop('taskId'), task)
     else:
         print(task)
