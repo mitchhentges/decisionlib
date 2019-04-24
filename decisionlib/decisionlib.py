@@ -418,6 +418,7 @@ class MobileShellTask(Task):
     _script: str
     _artifacts: List[AndroidArtifact]
     _file_secrets: List[Tuple[str, str, str]]
+    _install_python_3: bool
 
     def __init__(
             self,
@@ -432,6 +433,7 @@ class MobileShellTask(Task):
         self._script = script
         self._artifacts = []
         self._file_secrets = []
+        self._install_python_3 = False
 
     def with_artifact(self, artifact: AndroidArtifact):
         self._artifacts.append(artifact)
@@ -450,12 +452,7 @@ class MobileShellTask(Task):
         return self.with_secret(secret)
 
     def with_install_python_3(self):
-        self._script = '''
-        apt install python3-pip
-        alias pip=pip3
-        alias python=python3
-        {}
-        '''.format(self._script)
+        self._install_python_3 = True
         return self
 
     def render(
@@ -480,6 +477,12 @@ class MobileShellTask(Task):
                 git config advice.detachedHead false
                 git checkout FETCH_HEAD
                 """.format(url=context.checkout.html_url, ref=context.checkout.ref),
+                """
+                apt install python3-pip
+                alias pip=pip3
+                alias python=python3
+                {}
+                """ if self._install_python_3 else '',
                 *fetch_file_secrets_commands,
                 self._script
             ])
