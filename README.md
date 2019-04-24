@@ -33,23 +33,16 @@ def main():
 
 ## Within hook
 
-Update `payload.command`  of your hook to run `pip install decisionlib-cli && decisionlib-cli schedule-hook`
+Update `payload.command`  of your hook to run `pip install decisionlib && decisionlib schedule-hook`
 
 ## Within shell task
 
-`decisionlib-cli` has the ability to fetch secrets from taskcluster from either the command line or via python import.
+`decisionlib` has the ability to fetch secrets from taskcluster from either the command line or via python import.
 
-`pip install decisionlib-cli && decisionlib-cli get-secret /project/mobile/fenix/sentry api_key`
+`pip install decisionlib && decisionlib get-secret /project/mobile/fenix/sentry api_key`
 
 ### Usage:
 
 1. `pip install decisionlib-mhentges`
 2. Write your python decision task to schedule tasks
 3. Run your python script on Taskcluster, such as with a [hook](https://taskcluster-web.netlify.com/hooks)
-
-
-## Why two different packages?
-
-`decisionlib-cli` depends on the [`json-e`] package, but that package requires Python 2.
-Meanwhile, to ease the development of the heavier `decisionlib` library, Python 3 was needed (mostly for typings).
-Once `json-e` supports Python 3, we can group all of `decisionlib` into one library

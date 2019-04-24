@@ -1,2 +1,0 @@
-gitpython==2.1.11
-taskcluster==4.0.1

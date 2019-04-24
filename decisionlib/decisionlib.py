@@ -456,8 +456,8 @@ class MobileShellTask(Task):
             checkout: Checkout,
     ):
         if self._file_secrets:
-            fetch_file_secrets_commands = ['pip install decisionlib-cli-mhentges'] + [
-                'decisionlib-cli get-secret {} {} > {}'.format(secret, key, target_file)
+            fetch_file_secrets_commands = ['pip install decisionlib-mhentges'] + [
+                'decisionlib get-secret {} {} > {}'.format(secret, key, target_file)
                 for secret, key, target_file in self._file_secrets
             ]
         else:

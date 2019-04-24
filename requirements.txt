@@ -1,0 +1,4 @@
+gitpython==2.1.11
+json-e==3.0.0
+pyyaml==5.1
+taskcluster==7.0.1
