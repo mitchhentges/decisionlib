@@ -481,7 +481,6 @@ class MobileShellTask(Task):
                 apt install -y python3-pip
                 alias pip=pip3
                 alias python=python3
-                {}
                 """ if self._install_python_3 else '',
                 *fetch_file_secrets_commands,
                 self._script
