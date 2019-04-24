@@ -100,7 +100,7 @@ class Scheduler:
         self._tasks = []
 
     def append(self, task: 'Task'):
-        task_id = taskcluster.slugId().decode('utf-8')
+        task_id = taskcluster.slugId()
         self._tasks.append((task_id, task))
         return task_id
 
