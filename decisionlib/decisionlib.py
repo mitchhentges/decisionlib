@@ -478,7 +478,7 @@ class MobileShellTask(Task):
                 git checkout FETCH_HEAD
                 """.format(url=context.checkout.html_url, ref=context.checkout.ref),
                 """
-                apt install python3-pip
+                apt install -y python3-pip
                 alias pip=pip3
                 alias python=python3
                 {}
