@@ -596,13 +596,14 @@ class ShellTask(Task):
                 """.format(url=context.checkout.html_url, ref=context.checkout.ref),
                 """
                 apt install -y python3-pip
+                shopt -s expand_aliases
                 alias pip=pip3
                 alias python=python3
                 """ if self._install_python_3 else '',
                 *fetch_file_secrets_commands,
                 self._script
             ])
-            script = re.sub('\n\\s+', '\n', script)  # de-indent
+            script = re.sub('\n\\s+', '\n', script).strip()  # de-indent
 
             task.with_payload({
                 'maxRunTime': 86400,
