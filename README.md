@@ -49,4 +49,9 @@ Update `payload.command`  of your hook to run `pip install decisionlib && decisi
 
 1. `pip install decisionlib-mhentges`
 2. Write your python decision task to schedule tasks
-3. Run your python script on Taskcluster, such as with a [hook](https://taskcluster-web.netlify.com/hooks)
+3. Run your python script on Taskcluster, such as with a hook ([such as this `reference-browser` staging hook](https://tools.taskcluster.net/hooks/project-mobile/reference-browser-nightly-staging))
+
+### Creating your own task types
+
+If your task type always runs as a script within a Docker image, you should extend `ShellTask`.
+Otherwise, if your task type revolves around a particular worker type with a payload (e.g.: for `mobile-pushapk` tasks)

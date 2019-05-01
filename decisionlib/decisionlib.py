@@ -315,6 +315,11 @@ class ConfigurationContext:
 
 
 class Task:
+    """Base task builder
+
+    For an example of how this can be extended, see "ShellTask"
+
+    """
     _task_name: str
     _provisioner_id: str
     _payload: Any
@@ -526,11 +531,17 @@ class AndroidArtifact:
         self.outputs_apk_path = outputs_apk_path
         self.type = ArtifactType.FILE
 
-    def fs_path(self, alias: str):
-        return '/build/{}/app/build/outputs/apk/{}'.format(alias, self.outputs_apk_path)
+    def fs_path(self):
+        return '{}/app/build/outputs/apk/{}'.format(os.getcwd(), self.outputs_apk_path)
 
 
-class ShellTask(Task):
+class MobileShellTask(Task):
+    """Represents a task that runs within a docker image and is configured with a bash script
+
+    Note that if you're using a python 2 docker image and use decisionlib (e.g.: to fetch secrets,)
+    then you should call "with_install_python_3()", otherwise installing decisionlib will fail
+
+    """
     _docker_image: str
     _script: str
     _artifacts: List[AndroidArtifact]
@@ -569,6 +580,11 @@ class ShellTask(Task):
         return self.with_secret(secret)
 
     def with_install_python_3(self):
+        """Installs python3 with apt and sets it as the default for python and pip
+
+        Returns:
+
+        """
         self._install_python_3 = True
         return self
 
@@ -616,7 +632,7 @@ class ShellTask(Task):
                 'artifacts': {
                     artifact.taskcluster_path: {
                         'type': artifact.type.value,
-                        'path': artifact.fs_path(context.alias),
+                        'path': artifact.fs_path(),
                     }
                     for artifact in self._artifacts
                 }
@@ -645,13 +661,13 @@ def mobile_shell_task(
             in "mobile-1-b-ref-browser"
 
     Returns:
-        ShellTask: shell task builder
+        MobileShellTask: shell task builder
     """
 
     def decide_worker_type(level: TrustLevel):
         return 'mobile-{}-b-{}'.format(level.value, worker_type_suffix)
 
-    return ShellTask(
+    return MobileShellTask(
         task_name,
         'aws-provisioner-v1',
         decide_worker_type,

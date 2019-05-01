@@ -5,7 +5,7 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
     name='decisionlib-mhentges',
-    version='0.0.41',
+    version='0.0.42',
     author='Mozilla Release Engineering',
     author_email='release+python@mozilla.com',
     description='Taskcluster task-builder',
