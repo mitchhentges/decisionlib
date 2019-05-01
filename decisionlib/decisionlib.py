@@ -2,6 +2,7 @@ import datetime
 from enum import Enum
 import json
 import os
+import pprint
 import re
 
 from git import Repo
@@ -45,13 +46,32 @@ class Trigger:
         source = os.environ['DECISIONLIB_SOURCE']
         return Trigger(task_group_id, scheduler_id, level, owner, source)
 
+    @staticmethod
+    def from_fake(level: TrustLevel = TrustLevel.L1):
+        return Trigger('<task group id>', '<scheduler_id>', level, '<owner>', '<source>')
+
 
 class Checkout:
-    def __init__(self, alias, html_url: str, ref: str, commit: str):
-        self.alias = alias
-        self.html_url = html_url
+    def __init__(self, ref: str, commit: str, html_url: str, alias: str):
+        """Represents all information required to """
+
+        if not ref.startswith('refs/'):
+            raise ValueError('ref should follow the pattern "refs/.../...", such as '
+                             '"refs/heads/master". Perhaps you want to call '
+                             '"Checkout.from_branch(...)" instead?')
+
         self.ref = ref
         self.commit = commit
+        self.html_url = html_url
+        self.alias = alias
+
+    @staticmethod
+    def from_branch(branch: str, commit: str, html_url: str, alias: str):
+        return Checkout('refs/heads/{}'.format(branch), commit, html_url, alias)
+
+    @staticmethod
+    def from_tag(tag: str, commit: str, html_url: str, alias: str):
+        return Checkout('refs/tags/{}'.format(tag), commit, html_url, alias)
 
     @staticmethod
     def from_environment(remote: str = None):
@@ -77,7 +97,44 @@ class Checkout:
             html_url = remote
 
         alias = remote.split('/')[-1]
-        return Checkout(alias, html_url, str(ref), repo.head.object.hexsha)
+        return Checkout(str(ref), repo.head.object.hexsha, html_url, alias)
+
+    @staticmethod
+    def from_fake():
+        return Checkout.from_branch('<branch>', '<commit>', '<html url>', '<product id>')
+
+
+class TaskclusterQueue:
+    def __init__(self, queue: taskcluster.Queue):
+        self._queue = queue
+
+    def create(self, task_id: SlugId, raw_task: dict):
+        """Sends task to be run on Taskcluster
+
+        Args:
+            task_id:
+            raw_task: rendered Task
+
+        Returns: task as processed by Taskcluster
+
+        """
+        self._queue.createTask(task_id, raw_task)
+        return self._queue.task(task_id)
+
+    def get_internal(self):
+        return self._queue
+
+    @staticmethod
+    def from_environment():
+        """Determines Taskcluster Queue from the environment
+
+        Uses the TASKCLUSTER_PROXY_URL from the environment to create a taskcluster.Queue
+
+        Returns:
+
+        """
+        queue = taskcluster.Queue({'rootUrl': os.environ['TASKCLUSTER_PROXY_URL']})
+        return TaskclusterQueue(queue)
 
 
 def write_cot_files(full_task_graph):
@@ -95,11 +152,32 @@ def write_cot_files(full_task_graph):
 class Scheduler:
     """Assigns IDs to tasks and batch-schedules them"""
     _tasks: List[Tuple[SlugId, 'Task']]
+    _scheduled: bool
 
     def __init__(self):
         self._tasks = []
+        self._scheduled = False
+
+    def __del__(self):
+        # When an exception has been thrown, we don't want to print this error message, since
+        # the exception might've been thrown before the tasks were scheduled.
+        # Fortunately, to detect this, we can use `is_finalizing()` since it is True when an
+        # exception was thrown and is False here otherwise
+        if not self._scheduled and not sys.is_finalizing():
+            print('A Scheduler was created, but the tasks were never scheduled. Perhaps you '
+                  'forgot to call ".schedule_tasks(...)" (or ".print_tasks(...)")?',
+                  file=sys.stderr)
 
     def append(self, task: 'Task'):
+        """Adds the task to the batch of tasks to be scheduled
+
+        Args:
+            task:
+
+        Returns: task id of the added task
+
+        """
+
         task_id = taskcluster.slugId()
         self._tasks.append((task_id, task))
         return task_id
@@ -108,8 +186,49 @@ class Scheduler:
         for task in tasks:
             self.append(task)
 
-    def print_tasks(self, level: TrustLevel = TrustLevel.L1):
-        """Prints the contents of each task that's been scheduled
+    def schedule_tasks(
+            self,
+            queue: TaskclusterQueue,
+            checkout: Checkout,
+            trigger: Trigger,
+            write_cot_files: Callable[[Dict], None] = write_cot_files
+    ):
+        """Schedules all tasks in the order that they were provided to the scheduler
+
+        In addition to sending the tasks to the Taskcluster queue, this also creates the necessary
+        Chain of Trust files.
+
+        For example:
+        ```
+        queue = TaskclusterQueue.from_environment()
+        trigger = Trigger.from_environment()
+        checkout = Checkout.from_environment()
+        scheduler.schedule_tasks(queue, checkout, trigger)
+        ```
+
+        Args:
+            queue: taskcluster queue to append tasks to
+            trigger: the details of the action that triggered this build
+            checkout: source control information for the current revision
+            write_cot_files: method of encoding Chain of Trust files (by default, writes to
+                task-graph.json, actions.json and parameters.yml)
+
+        Returns:
+
+        """
+
+        self._scheduled = True
+        full_task_graph = {}
+
+        for task_id, task in self._tasks:
+            full_task_graph[task_id] = {
+                'task': queue.create(task_id, task.render(task_id, trigger, checkout))
+            }
+
+        write_cot_files(full_task_graph)
+
+    def fake_print_tasks(self, level: TrustLevel = TrustLevel.L1):
+        """Prints the contents of each task that's been scheduled using fake context information
 
         Should only be used for testing, since this generates fake build information
 
@@ -119,47 +238,28 @@ class Scheduler:
         Returns:
 
         """
-        trigger = Trigger('<task group id>', '<scheduler_id>', level, '<owner>', '<source>')
-        checkout = Checkout('<product id>', '<html url>', '<ref>', '<commit>')
-        for task_id, task in self._tasks:
-            task = task.render(task_id, trigger, checkout)
-            print(task_id, task)
+        self._scheduled = True
+        for task_id, task in self.fake_rendered_tasks(level):
+            print('Task ID: {}'.format(task_id))
+            pprint.pprint(task)
+            print('----------')
 
-    def schedule_tasks(
-            self,
-            queue,
-            checkout: Checkout = None,
-            trigger: Trigger = None,
-            write_cot_files: Callable[[Dict], None] = write_cot_files
-    ):
-        """Schedules all tasks in the order that they were provided to the scheduler
+    def fake_rendered_tasks(self, level: TrustLevel = TrustLevel.L1):
+        """Prints the contents of each task that's been scheduled using fake context information
 
-        In addition to sending the tasks to the Taskcluster queue, this also creates the necessary
-        Chain of Trust files
+        Should only be used for testing, since this generates fake build information
 
         Args:
-            queue: taskcluster queue to append tasks to
-            trigger: the details of the action that triggered this build
-            checkout: source control information for the current revision
-            write_cot_files: method of encoding Chain of Trust files
+            level: trust level of the task
 
         Returns:
 
         """
-        # These aren't default parameters because that would cause them to be evaluated, regardless
-        # of it they're used
-        checkout = checkout or Checkout.from_environment()
-        trigger = trigger or Trigger.from_environment()
-        full_task_graph = {}
-
-        for task_id, task in self._tasks:
-            task = task.render(task_id, trigger, checkout)
-            queue.createTask(task_id, task)
-            full_task_graph[task_id] = {
-                'task': queue.task(task_id)
-            }
-
-        write_cot_files(full_task_graph)
+        self._scheduled = True
+        trigger = Trigger.from_fake(level)
+        checkout = Checkout.from_fake()
+        return [(task_id, task.render(task_id, trigger, checkout))
+                for task_id, task in self._tasks]
 
 
 class Treeherder:
@@ -173,7 +273,7 @@ class Treeherder:
 
     @staticmethod
     def from_symbol_string(symbol: str, job_kind: str, machine_platform: str, tier: int):
-        pattern = re.compile(r'^(?:([\w\d]+)\(([\w\d]+)\)|([\w\d]+))$')
+        pattern = re.compile(r'^(?:([\w\d\-]+)\(([\w\d\-]+)\)|([\w\d\-]+))$')
         match = pattern.match(symbol)
         if not match:
             raise ValueError('The provided symbol string does not match the structure of'
@@ -296,6 +396,14 @@ class Task:
         return self
 
     def with_notify_owner(self):
+        """Emails the owner of the task if it fails
+
+        Uses the trigger information (e.g.: `DECISIONLIB_OWNER` from the environment) to determine
+        the owner
+
+        Returns:
+
+        """
         return self.map(lambda task, context: task.with_route(
             'notify.email.{}.on-failed'.format(context.trigger.owner)))
 
@@ -306,7 +414,8 @@ class Task:
             symbol: has the form "groupSymbol(taskSymbol)", or just "taskSymbol" if no group
             job_kind:
             machine_platform:
-            tier:
+            tier: controls visibility to sheriffs - 1 being "immediately handle this task if it
+                fails" while a 3 is practically invisible to sheriffs
 
         Returns:
 
@@ -320,6 +429,14 @@ class Task:
         return self
 
     def schedule(self, scheduler: Scheduler):
+        """Appends task the the provided scheduler
+
+        Args:
+            scheduler:
+
+        Returns: the task's new ID
+
+        """
         self._scheduled = True
         return scheduler.append(self)
 
@@ -398,14 +515,14 @@ class AndroidArtifact:
     outputs_apk_path: str
     type: ArtifactType
 
-    def __init__(self, public_path: str, outputs_apk_path: str):
+    def __init__(self, taskcluster_path: str, outputs_apk_path: str):
         """
 
         Args:
-            public_path: path of artifact on Taskcluster
+            taskcluster_path: path of artifact on Taskcluster
             outputs_apk_path: path to apk within gradle's "outputs/apks/
         """
-        self.taskcluster_path = public_path
+        self.taskcluster_path = taskcluster_path
         self.outputs_apk_path = outputs_apk_path
         self.type = ArtifactType.FILE
 
@@ -413,8 +530,8 @@ class AndroidArtifact:
         return '/build/{}/app/build/outputs/apk/{}'.format(alias, self.outputs_apk_path)
 
 
-class MobileShellTask(Task):
-    _image: str
+class ShellTask(Task):
+    _docker_image: str
     _script: str
     _artifacts: List[AndroidArtifact]
     _file_secrets: List[Tuple[str, str, str]]
@@ -425,11 +542,11 @@ class MobileShellTask(Task):
             task_name: str,
             provisioner_id: str,
             worker_type: Union[Callable[[TrustLevel], str], str],
-            image: str,
+            docker_image: str,
             script: str,
     ):
         super().__init__(task_name, provisioner_id, worker_type)
-        self._image = image
+        self._docker_image = docker_image
         self._script = script
         self._artifacts = []
         self._file_secrets = []
@@ -485,7 +602,7 @@ class MobileShellTask(Task):
                 *fetch_file_secrets_commands,
                 self._script
             ])
-            script = re.sub('\n +', '\n', script)  # de-indent
+            script = re.sub('\n\\s+', '\n', script)  # de-indent
 
             task.with_payload({
                 'maxRunTime': 86400,
@@ -493,7 +610,7 @@ class MobileShellTask(Task):
                     'chainOfTrust': True if self._artifacts else False,
                     'taskclusterProxy': True if self._file_secrets else False,
                 },
-                'image': self._image,
+                'image': self._docker_image,
                 'command': ['/bin/bash', '--login', '-cxe', script],
                 'artifacts': {
                     artifact.taskcluster_path: {
@@ -510,31 +627,34 @@ class MobileShellTask(Task):
 
 def mobile_shell_task(
         task_name: str,
-        image: str,
+        docker_image: str,
         script: str,
         worker_type_suffix: str
 ):
     """Builds task that runs as shell commands in a docker container
 
+    Clones the project repository in the docker image and installs decision_lib. The working
+    directory is within the cloned repository
+
     Args:
         task_name: name of task
-        image: docker image
+        docker_image: docker image
         script: commands to run within the container
         worker_type_suffix: the ending to the worker type, such as the "ref-browser"
             in "mobile-1-b-ref-browser"
 
     Returns:
-        MobileShellTask: shell task builder
+        ShellTask: shell task builder
     """
 
     def decide_worker_type(level: TrustLevel):
         return 'mobile-{}-b-{}'.format(level.value, worker_type_suffix)
 
-    return MobileShellTask(
+    return ShellTask(
         task_name,
         'aws-provisioner-v1',
         decide_worker_type,
-        image,
+        docker_image,
         script,
     )
 
@@ -544,7 +664,7 @@ class SigningType(Enum):
     RELEASE = 'release'
 
 
-def sign_task(
+def mobile_sign_task(
         task_name: str,
         signing_format: str,
         signing_type: Union[str, SigningType],
@@ -552,13 +672,20 @@ def sign_task(
 ):
     """Builds task that runs within "mobile-signing-(dep-)v1" workers
 
+    Note: signing tasks automatically expose artifacts: for each incoming APK, they expose the
+    signed version under the same taskcluster path.
+
+    So, task artifacts will look similar to:
+    build task => [target.arm.apk, target.aarch64.apk] (both unsigned)
+    sign task => [target.arm.apk, target.aarch64.apk] (both signed)
+
     Args:
         task_name: name of task
         signing_format: signing format, such as "autograph_apk"
         signing_type: what type of signing key should be used. Can be defined with strings
             ("dep"/"release") or the SigningType enum itself
         upstream_artifacts: task id and path to apks that this task will sign. For example:
-            (<assemble_task_id>, [<artifact_1_path>, <artifact_2_path>])
+            [(<assemble_task_id>, [<artifact_1_path>, <artifact_2_path>])]
 
     Returns:
         Task: task builder
@@ -593,7 +720,7 @@ def sign_task(
         ]))
 
 
-def google_play_task(
+def mobile_google_play_task(
         task_name: str,
         track: str,
         upstream_artifacts: List[Tuple[SlugId, List[str]]],
@@ -645,7 +772,7 @@ class TaskclusterArtifact:
             .format(self.task_id, self.path)
 
 
-def raptor_task(
+def mobile_raptor_task(
         task_name: str,
         signed_apk: Tuple[SlugId, str],
         mozharness_task_id: str,
