@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import datetime
 from enum import Enum
 import json
@@ -262,17 +263,41 @@ class Scheduler:
                 for task_id, task in self._tasks]
 
 
+class TreeherderJobKind(Enum):
+    BUILD = 'build'
+    TEST = 'test'
+    OTHER = 'other'
+
+
 class Treeherder:
-    def __init__(self, job_kind: str, machine_platform: str, tier: int, symbol: str,
-                 group_symbol: str = None):
+    def __init__(self, job_kind: TreeherderJobKind, machine_platform: str, sheriff_tier: int,
+                 symbol: str, group_symbol: str = None):
         self.symbol = symbol
         self.job_kind = job_kind
-        self.tier = tier
+        self.sheriff_tier = sheriff_tier
         self.machine_platform = machine_platform
         self.group_symbol = group_symbol
 
     @staticmethod
-    def from_symbol_string(symbol: str, job_kind: str, machine_platform: str, tier: int):
+    def from_raw(symbol: str, job_kind: Union[TreeherderJobKind, str], machine_platform: str,
+                 sheriff_tier: int):
+        """Parses Treeherder options from raw values
+
+        Transforms symbol into group_symbol and job symbol according to the pattern of
+        either symbol="group(job)" or just symbol="job".
+        Also parses job_kind into a TreeherderJobKind if possible.
+
+        Args:
+            symbol:
+            job_kind:
+            machine_platform:
+            sheriff_tier:
+
+        Returns:
+
+        """
+        job_kind = TreeherderJobKind(job_kind) if type(job_kind) is str else job_kind
+
         pattern = re.compile(r'^(?:([\w\d\-]+)\(([\w\d\-]+)\)|([\w\d\-]+))$')
         match = pattern.match(symbol)
         if not match:
@@ -280,9 +305,10 @@ class Treeherder:
                              ' "group(symbol)" or "symbol"')
 
         if match.group(1) and match.group(2):
-            return Treeherder(job_kind, machine_platform, tier, match.group(2), match.group(1))
+            return Treeherder(job_kind, machine_platform, sheriff_tier, match.group(2),
+                              match.group(1))
         elif match.group(3):
-            return Treeherder(job_kind, machine_platform, tier, match.group(3))
+            return Treeherder(job_kind, machine_platform, sheriff_tier, match.group(3))
         else:
             raise RuntimeError('Could not successfully extract treeherder information from symbol')
 
@@ -412,20 +438,23 @@ class Task:
         return self.map(lambda task, context: task.with_route(
             'notify.email.{}.on-failed'.format(context.trigger.owner)))
 
-    def with_treeherder(self, symbol: str, job_kind: str, machine_platform: str, tier: int):
+    def with_treeherder(self, symbol: str, job_kind: Union[TreeherderJobKind, str],
+                        machine_platform: str, sheriff_tier: int):
         """Configures task to communicate status and results to treeherder
 
         Args:
             symbol: has the form "groupSymbol(taskSymbol)", or just "taskSymbol" if no group
-            job_kind:
-            machine_platform:
-            tier: controls visibility to sheriffs - 1 being "immediately handle this task if it
-                fails" while a 3 is practically invisible to sheriffs
+            job_kind: changes display/treatment of the task when it completes, such as how
+                "build" kinds will be red when they fail, while "test" will be orange
+            machine_platform: Tasks with the same platform will be displayed on the same row
+            sheriff_tier: value from 1 to 3 that controls visibility to sheriffs - 1 being "
+                immediately handle this task if it fails" while a 3 is practically
+                invisible to sheriffs
 
         Returns:
 
         """
-        self._treeherder = Treeherder.from_symbol_string(symbol, job_kind, machine_platform, tier)
+        self._treeherder = Treeherder.from_raw(symbol, job_kind, machine_platform, sheriff_tier)
         return self.map(lambda task, context: task.with_route(
             'tc-treeherder.v2.{}.{}'.format(context.alias, context.checkout.commit)))
 
@@ -489,8 +518,8 @@ class Task:
                 'treeherder': {
                     'symbol': self._treeherder.symbol,
                     'groupSymbol': self._treeherder.group_symbol,
-                    'jobKind': self._treeherder.job_kind,
-                    'tier': self._treeherder.tier,
+                    'jobKind': self._treeherder.job_kind.value,
+                    'tier': self._treeherder.sheriff_tier,
                     'machine': {
                         'platform': self._treeherder.machine_platform
                     },
@@ -515,7 +544,21 @@ class ArtifactType(Enum):
     DIRECTORY = 'directory'
 
 
-class AndroidArtifact:
+class Artifact:
+    def __init__(self, taskcluster_path: str, relative_fs_path: str, type: ArtifactType):
+        """File or directory on worker that's uploaded to Taskcluster
+
+        Args:
+            taskcluster_path: path on Taskcluster, such as "public/target.apk"
+            relative_fs_path: path to the artifact on the FS relative to the checkout directory
+            type: file or directory
+        """
+        self.taskcluster_path = taskcluster_path
+        self.relative_fs_path = relative_fs_path
+        self.type = type
+
+
+class AndroidArtifact(Artifact):
     taskcluster_path: str
     outputs_apk_path: str
     type: ArtifactType
@@ -527,15 +570,14 @@ class AndroidArtifact:
             taskcluster_path: path of artifact on Taskcluster
             outputs_apk_path: path to apk within gradle's "outputs/apks/
         """
-        self.taskcluster_path = taskcluster_path
-        self.outputs_apk_path = outputs_apk_path
-        self.type = ArtifactType.FILE
+        super().__init__(
+            taskcluster_path,
+            'app/build/outputs/apk/{}'.format(outputs_apk_path),
+            ArtifactType.FILE
+        )
 
-    def fs_path(self):
-        return '{}/app/build/outputs/apk/{}'.format(os.getcwd(), self.outputs_apk_path)
 
-
-class MobileShellTask(Task):
+class ShellTask(Task):
     """Represents a task that runs within a docker image and is configured with a bash script
 
     Note that if you're using a python 2 docker image and use decisionlib (e.g.: to fetch secrets,)
@@ -543,8 +585,8 @@ class MobileShellTask(Task):
 
     """
     _docker_image: str
-    _script: str
-    _artifacts: List[AndroidArtifact]
+    _scripts: List[str]
+    _artifacts: List[Artifact]
     _file_secrets: List[Tuple[str, str, str]]
     _install_python_3: bool
 
@@ -554,20 +596,30 @@ class MobileShellTask(Task):
             provisioner_id: str,
             worker_type: Union[Callable[[TrustLevel], str], str],
             docker_image: str,
-            script: str,
+            script: str = None,
     ):
+        """Creates shell task
+
+        Args:
+            task_name:
+            provisioner_id:
+            worker_type:
+            docker_image:
+            script: Shell script to run with bash. Additional scripts can be appended using
+                "with_script"
+        """
         super().__init__(task_name, provisioner_id, worker_type)
         self._docker_image = docker_image
-        self._script = script
+        self._scripts = [script] if script else []
         self._artifacts = []
         self._file_secrets = []
         self._install_python_3 = False
 
-    def with_artifact(self, artifact: AndroidArtifact):
+    def with_artifact(self, artifact: Artifact):
         self._artifacts.append(artifact)
         return self
 
-    def with_artifacts(self, artifacts: List[AndroidArtifact]):
+    def with_artifacts(self, artifacts: List[Artifact]):
         self._artifacts.extend(artifacts)
         return self
 
@@ -586,6 +638,18 @@ class MobileShellTask(Task):
 
         """
         self._install_python_3 = True
+        return self
+
+    def with_script(self, script):
+        """Appends a script to be run as part of this task
+
+        Args:
+            script:
+
+        Returns:
+
+        """
+        self._scripts.append(script)
         return self
 
     def render(
@@ -617,7 +681,7 @@ class MobileShellTask(Task):
                 alias python=python3
                 """ if self._install_python_3 else '',
                 *fetch_file_secrets_commands,
-                self._script
+                *self._scripts
             ])
             script = re.sub('\n\\s+', '\n', script).strip()  # de-indent
 
@@ -632,7 +696,7 @@ class MobileShellTask(Task):
                 'artifacts': {
                     artifact.taskcluster_path: {
                         'type': artifact.type.value,
-                        'path': artifact.fs_path(),
+                        'path': '{}/{}'.format(os.getcwd(), artifact.relative_fs_path),
                     }
                     for artifact in self._artifacts
                 }
@@ -661,13 +725,13 @@ def mobile_shell_task(
             in "mobile-1-b-ref-browser"
 
     Returns:
-        MobileShellTask: shell task builder
+        ShellTask: shell task builder
     """
 
     def decide_worker_type(level: TrustLevel):
         return 'mobile-{}-b-{}'.format(level.value, worker_type_suffix)
 
-    return MobileShellTask(
+    return ShellTask(
         task_name,
         'aws-provisioner-v1',
         decide_worker_type,

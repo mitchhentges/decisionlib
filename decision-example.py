@@ -1,5 +1,6 @@
-from decisionlib.decisionlib import Scheduler, mobile_shell_task, AndroidArtifact, mobile_sign_task, \
-    SigningType, Trigger, Checkout, TaskclusterQueue
+from decisionlib.decisionlib import Scheduler, mobile_shell_task, AndroidArtifact, \
+    mobile_sign_task, \
+    SigningType, Trigger, Checkout, TaskclusterQueue, TreeherderJobKind
 
 
 def main():
@@ -7,13 +8,13 @@ def main():
     assemble_task_id = mobile_shell_task('assemble', 'mozillamobile/fenix:1.0',
                                          './gradlew assembleRelease', 'ref-browser') \
         .with_artifact(AndroidArtifact('public/target.apk', 'release/app-release.apk')) \
-        .with_treeherder('build', 'android-all', 1, 'B') \
+        .with_treeherder('B', TreeherderJobKind.BUILD, 'android-all', 1) \
         .with_notify_owner() \
         .schedule(scheduler)
 
     mobile_sign_task('sign', 'autograph_apk', SigningType.DEP,
                      [(assemble_task_id, ['public/target.apk'])]) \
-        .with_treeherder('S', 'other', 'android-all', 1) \
+        .with_treeherder('S', TreeherderJobKind.OTHER, 'android-all', 1) \
         .with_notify_owner() \
         .with_route('index.project.mobile.fenix.release.latest') \
         .schedule(scheduler)

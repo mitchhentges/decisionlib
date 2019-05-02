@@ -1,4 +1,4 @@
-# `decisionlib`
+from decisionlib.decisionlib import ShellTaskfrom decisionlib.decisionlib import ShellTask# `decisionlib`
 
 Taskcluster utility library for building reusable tasks.
 
@@ -54,4 +54,12 @@ Update `payload.command`  of your hook to run `pip install decisionlib && decisi
 ### Creating your own task types
 
 If your task type always runs as a script within a Docker image, you should extend `ShellTask`.
+
+```python
+class MavenShellTask(ShellTask):
+    def __init__(self, task_name: str, provisioner:id):
+        super().__init__(task_name, provisioner_id, worker_type, 'mozillamobile/maven:15.0', script)
+
+```
+
 Otherwise, if your task type revolves around a particular worker type with a payload (e.g.: for `mobile-pushapk` tasks)
