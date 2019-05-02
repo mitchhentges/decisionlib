@@ -513,7 +513,7 @@ class Task:
                 'source': trigger.source,
             },
             'routes': self._routes,
-            'dependencies': [trigger.task_group_id] + self._dependencies,
+            'dependencies': [trigger.decision_task_id] + self._dependencies,
             'scopes': self._scopes,
             'payload': self._payload or {},
             'priority': self._priority.value if self._priority else None,
