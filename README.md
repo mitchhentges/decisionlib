@@ -9,7 +9,7 @@ Taskcluster utility library for building reusable tasks.
 ### Example
 
 ```python
-from decisionlib.decisionlib import Scheduler, mobile_shell_task, AndroidArtifact, sign_task, \
+from decisionlib.decisionlib import Scheduler, mobile_shell_task, AndroidArtifact, mobile_sign_task, \
     SigningType, Trigger, Checkout, TaskclusterQueue
 
 
@@ -22,7 +22,7 @@ def main():
         .with_notify_owner() \
         .schedule(scheduler)
 
-    sign_task('sign', 'autograph_apk', SigningType.DEP,
+    mobile_sign_task('sign', 'autograph_apk', SigningType.DEP,
               [(assemble_task_id, ['public/target.apk'])]) \
         .with_treeherder('S', 'other', 'android-all', 1) \
         .with_notify_owner() \
@@ -53,13 +53,58 @@ Update `payload.command`  of your hook to run `pip install decisionlib && decisi
 
 ### Creating your own task types
 
-If your task type always runs as a script within a Docker image, you should extend `ShellTask`.
+If your task type always runs as a script within a Docker image, you should extend `ShellTask` (example below).
+Otherwise, if your task type revolves around a particular worker type with a payload (e.g.: for `mobile-pushapk` tasks),
+you probably want to extend the base `Task`.
 
 ```python
+from typing import Optional
+
+from decisionlib.decisionlib import ShellTask, Artifact, ArtifactType, SlugId, Trigger, Checkout
+
+
 class MavenShellTask(ShellTask):
-    def __init__(self, task_name: str, provisioner:id):
-        super().__init__(task_name, provisioner_id, worker_type, 'mozillamobile/maven:15.0', script)
+    _mvn_goal: str
+    _parallel: bool
+    _parallel_thread_count: Optional[int]
 
+    def __init__(self, task_name: str, provisioner_id: str, worker_type: str, mvn_goal: str):
+        super().__init__(task_name, provisioner_id, worker_type, 'mozillamobile/maven:15.0')
+        self._mvn_goal = mvn_goal
+        self._parallel = False
+
+    def with_surefire_artifacts(self):
+        self.with_artifact(Artifact('public/tests', 'target/surefire-reports',
+                                    ArtifactType.DIRECTORY))
+        return self
+
+    def with_parallel(self, thread_count: int):
+        # Maybe not the best example, because you'd probably want maintainers to just
+        # write the full "mvn" command itself, rather than having a function for each
+        # option. However, this illustrates how render(...) would be overridden, and
+        # that's the main point of this exercise, so :)
+        self._parallel = True
+        self._parallel_thread_count = thread_count
+        return self
+
+    def render(
+            self,
+            task_id: SlugId,
+            trigger: Trigger,
+            checkout: Checkout,
+    ):
+        self.with_script('mvn {} {}'.format(
+            '-T {}'.format(self._parallel_thread_count) if self._parallel else '',
+            self._mvn_goal
+        ))
+        return super().render(task_id, trigger, checkout)
+        
+        
+def main():
+    scheduler = ...
+    MavenShellTask('test', 'provisioner', 'worker', 'test') \
+        .with_surefire_artifacts() \
+        .with_parallel(4) \
+        .schedule(scheduler)
+    ...
 ```
-
-Otherwise, if your task type revolves around a particular worker type with a payload (e.g.: for `mobile-pushapk` tasks)
