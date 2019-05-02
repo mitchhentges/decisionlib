@@ -673,6 +673,8 @@ class ShellTask(Task):
             script = '\n'.join([
                 """
                 export TERM=dumb
+                git init /tmp/build
+                cd /tmp/build
                 git fetch {url} {ref}
                 git config advice.detachedHead false
                 git checkout FETCH_HEAD
@@ -699,7 +701,7 @@ class ShellTask(Task):
                 'artifacts': {
                     artifact.taskcluster_path: {
                         'type': artifact.type.value,
-                        'path': '{}/{}'.format(os.getcwd(), artifact.relative_fs_path),
+                        'path': '/tmp/build/{}'.format(artifact.relative_fs_path),
                     }
                     for artifact in self._artifacts
                 }
