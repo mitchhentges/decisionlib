@@ -518,6 +518,7 @@ class Task:
             'payload': self._payload or {},
             'priority': self._priority.value if self._priority else None,
             'extra': {
+                'parent': trigger.decision_task_id,
                 'treeherder': {
                     'symbol': self._treeherder.symbol,
                     'groupSymbol': self._treeherder.group_symbol,
