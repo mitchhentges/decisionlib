@@ -21,10 +21,9 @@ class TrustLevel(Enum):
 
 
 class Trigger:
-    def __init__(self, decision_task_id: SlugId, task_group_id: SlugId, scheduler_id: str,
+    def __init__(self, decision_task_id: SlugId, scheduler_id: str,
                  level: TrustLevel, owner: str, source: str):
         self.decision_task_id = decision_task_id
-        self.task_group_id = task_group_id
         self.scheduler_id = scheduler_id
         self.level = level
         self.owner = owner
@@ -42,12 +41,11 @@ class Trigger:
 
         """
         decision_task_id = os.environ['DECISIONLIB_DECISION_TASK_ID']
-        task_group_id = os.environ['DECISIONLIB_TASK_GROUP_ID']
         scheduler_id = os.environ['DECISIONLIB_SCHEDULER_ID']
         level = TrustLevel(int(os.environ['DECISIONLIB_TRUST_LEVEL']))
         owner = os.environ['DECISIONLIB_OWNER']
         source = os.environ['DECISIONLIB_SOURCE']
-        return Trigger(decision_task_id, task_group_id, scheduler_id, level, owner, source)
+        return Trigger(decision_task_id, scheduler_id, level, owner, source)
 
     @staticmethod
     def from_fake(level: TrustLevel = TrustLevel.L1):
@@ -503,7 +501,7 @@ class Task:
 
         raw_task = {
             'schedulerId': trigger.scheduler_id,
-            'taskGroupId': trigger.task_group_id,
+            'taskGroupId': trigger.decision_task_id,
             'provisionerId': self._provisioner_id,
             'workerType': worker_type,
             'metadata': {
