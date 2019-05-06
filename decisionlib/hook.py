@@ -80,9 +80,11 @@ def schedule_hook(task_id, html_url, branch, revision, dry_run):
                            .format(html_url))
 
     task = rendered['tasks'][0]
+    task_id = task.pop('taskId')
 
+    print('Decision task ID: {}'.format(task_id))
     if not dry_run:
         queue = taskcluster.Queue({'rootUrl': os.environ['TASKCLUSTER_PROXY_URL']})
-        queue.createTask(task.pop('taskId'), task)
+        queue.createTask(task_id, task)
     else:
         print(task)
