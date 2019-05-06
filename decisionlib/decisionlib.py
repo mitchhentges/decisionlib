@@ -753,7 +753,7 @@ def mobile_sign_task(
         task_name: str,
         signing_format: str,
         signing_type: Union[str, SigningType],
-        upstream_artifacts: List[Tuple[SlugId, List[str]]],
+        *upstream_artifacts: Tuple[SlugId, List[str]],
 ):
     """Builds task that runs within "mobile-signing-(dep-)v1" workers
 
@@ -769,8 +769,8 @@ def mobile_sign_task(
         signing_format: signing format, such as "autograph_apk"
         signing_type: what type of signing key should be used. Can be defined with strings
             ("dep"/"release") or the SigningType enum itself
-        upstream_artifacts: task id and path to apks that this task will sign. For example:
-            [(<assemble_task_id>, [<artifact_1_path>, <artifact_2_path>])]
+        upstream_artifacts: task id + apk paths combinations that this task will sign.
+            For example: (assemble_task_id, [artifact_1_path, artifact_2_path)
 
     Returns:
         Task: task builder
