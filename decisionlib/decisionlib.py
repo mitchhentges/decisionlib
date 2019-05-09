@@ -6,6 +6,7 @@ import os
 import pprint
 import re
 
+import arrow
 from git import Repo
 from typing import Optional, Tuple, List, Any, Callable, Union, Dict
 
@@ -43,7 +44,7 @@ class Trigger:
         """
         decision_task_id = os.environ['DECISIONLIB_DECISION_TASK_ID']
         scheduler_id = os.environ['DECISIONLIB_SCHEDULER_ID']
-        date = os.environ['DECISIONLIB_DATE']
+        date = arrow.get(os.environ['DECISIONLIB_DATE'])
         level = TrustLevel(int(os.environ['DECISIONLIB_TRUST_LEVEL']))
         owner = os.environ['DECISIONLIB_OWNER']
         source = os.environ['DECISIONLIB_SOURCE']
