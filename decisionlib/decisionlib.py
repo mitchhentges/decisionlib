@@ -22,9 +22,10 @@ class TrustLevel(Enum):
 
 class Trigger:
     def __init__(self, decision_task_id: SlugId, scheduler_id: str,
-                 level: TrustLevel, owner: str, source: str):
+                 date: datetime.datetime, level: TrustLevel, owner: str, source: str):
         self.decision_task_id = decision_task_id
         self.scheduler_id = scheduler_id
+        self.date = date
         self.level = level
         self.owner = owner
         self.source = source
@@ -42,15 +43,16 @@ class Trigger:
         """
         decision_task_id = os.environ['DECISIONLIB_DECISION_TASK_ID']
         scheduler_id = os.environ['DECISIONLIB_SCHEDULER_ID']
+        date = os.environ['DECISIONLIB_DATE']
         level = TrustLevel(int(os.environ['DECISIONLIB_TRUST_LEVEL']))
         owner = os.environ['DECISIONLIB_OWNER']
         source = os.environ['DECISIONLIB_SOURCE']
-        return Trigger(decision_task_id, scheduler_id, level, owner, source)
+        return Trigger(decision_task_id, scheduler_id, date, level, owner, source)
 
     @staticmethod
     def from_fake(level: TrustLevel = TrustLevel.L1):
-        return Trigger('<decision task id>', '<task group id>', '<scheduler_id>', level,
-                       '<owner>', '<source>')
+        return Trigger('<decision task id>', '<scheduler_id>', datetime.datetime.now(),
+                       level, '<owner>', '<source>')
 
 
 class Checkout:
@@ -326,19 +328,21 @@ class Priority(Enum):
 
 
 class ConfigurationContext:
-    alias: str
-    checkout: Checkout
-    trigger: Trigger
-
     def __init__(
             self,
-            alias: str,
             checkout: Checkout,
             trigger: Trigger,
     ):
-        self.alias = alias
-        self.checkout = checkout
-        self.trigger = trigger
+        self.ref = checkout.ref
+        self.commit = checkout.commit
+        self.html_url = checkout.html_url
+        self.alias = checkout.alias
+        self.decision_task_id = trigger.decision_task_id
+        self.scheduler_id = trigger.scheduler_id
+        self.date = trigger.date
+        self.level = trigger.level
+        self.owner = trigger.owner
+        self.source = trigger.source
 
 
 class Task:
@@ -437,7 +441,7 @@ class Task:
 
         """
         return self.map(lambda task, context: task.with_route(
-            'notify.email.{}.on-failed'.format(context.trigger.owner)))
+            'notify.email.{}.on-failed'.format(context.owner)))
 
     def with_treeherder(self, symbol: str, job_kind: Union[TreeherderJobKind, str],
                         machine_platform: str, sheriff_tier: int):
@@ -457,7 +461,7 @@ class Task:
         """
         self._treeherder = Treeherder.from_raw(symbol, job_kind, machine_platform, sheriff_tier)
         return self.map(lambda task, context: task.with_route(
-            'tc-treeherder.v2.{}.{}'.format(context.alias, context.checkout.commit)))
+            'tc-treeherder.v2.{}.{}'.format(context.alias, context.commit)))
 
     def map(self, configuration: Callable[['Task', ConfigurationContext], None]):
         self._map_functions.append(configuration)
@@ -494,7 +498,7 @@ class Task:
             dict: raw taskcluster task definition
 
         """
-        context = ConfigurationContext(checkout.alias, checkout, trigger)
+        context = ConfigurationContext(checkout, trigger)
         worker_type = self._worker_type(trigger.level)
         for map_function in self._map_functions:
             map_function(self, context)
@@ -516,7 +520,6 @@ class Task:
             'payload': self._payload or {},
             'priority': self._priority.value if self._priority else None,
             'extra': {
-                'parent': trigger.decision_task_id,
                 'treeherder': {
                     'symbol': self._treeherder.symbol,
                     'groupSymbol': self._treeherder.group_symbol,
@@ -537,6 +540,9 @@ class Task:
 
         if not raw_task['extra']['treeherder']:
             del raw_task['extra']['treeherder']
+
+        if not raw_task['extra']:
+            del raw_task['extra']
 
         return raw_task
 
@@ -677,7 +683,7 @@ class ShellTask(Task):
                 git fetch {url} {ref}
                 git config advice.detachedHead false
                 git checkout FETCH_HEAD
-                """.format(url=context.checkout.html_url, ref=context.checkout.ref),
+                """.format(url=context.html_url, ref=context.ref),
                 """
                 apt install -y python3-pip
                 shopt -s expand_aliases
@@ -840,7 +846,7 @@ def mobile_google_play_task(
         lambda task, context: task.with_scopes([
             'project:mobile:{alias}:releng:googleplay:product:{alias}{type}'.format(
                 alias=context.alias,
-                type=':dep' if context.trigger.level == TrustLevel.L1 else ''
+                type=':dep' if context.level == TrustLevel.L1 else ''
             )
         ]))
 
@@ -859,6 +865,7 @@ class TaskclusterArtifact:
 
 def mobile_raptor_task(
         task_name: str,
+        test_name: str,
         signed_apk: Tuple[SlugId, str],
         mozharness_task_id: str,
         is_arm: bool,
@@ -866,11 +873,13 @@ def mobile_raptor_task(
         package_name: str,
         activity_class_name: str,
         gecko_revision: str,
+        test_linux_args: List[str] = ()
 ):
     """Builds raptor performance-testing task
 
     Args:
         task_name: name of task
+        test_name: name of raptor test
         signed_apk: id of signing task and path to apk
         mozharness_task_id: id of mozharness task
         is_arm: true if signed apk uses the ARM abi
@@ -878,6 +887,7 @@ def mobile_raptor_task(
         package_name: package name
         activity_class_name: activity to test
         gecko_revision: gecko revision
+        test_linux_args: additional arguments to provide to "test-linux.sh"
 
     Returns:
         Task: task builder
@@ -901,12 +911,12 @@ def mobile_raptor_task(
             '--installer-url={}'.format(signed_apk.url()),
             '--test-packages-url={}'.format(TaskclusterArtifact(
                 mozharness_task_id, 'public/build/target.test_packages.json').url()),
-            '--test=raptor-speedometer',
+            '--test={}'.format(test_name),
             '--app={}'.format(raptor_app_id),
             '--binary={}'.format(package_name),
             '--activity={}'.format(activity_class_name),
             '--download-symbols=ondemand',
-        ],
+        ] + list(test_linux_args),
         'env': {
             'XPCOM_DEBUG_BREAK': 'warn',
             'MOZ_NO_REMOTE': '1',
