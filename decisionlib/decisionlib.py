@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 import datetime
 from enum import Enum
 import json
@@ -61,9 +60,9 @@ class Checkout:
         """Represents all information required to """
 
         if not ref.startswith('refs/'):
-            raise ValueError('ref should follow the pattern "refs/.../...", such as '
+            raise ValueError('The ref provided ("{}") should follow the pattern "refs/.../...", such as '
                              '"refs/heads/master". Perhaps you want to call '
-                             '"Checkout.from_branch(...)" instead?')
+                             '"Checkout.from_branch(...)" instead?'.format(ref))
 
         self.ref = ref
         self.commit = commit
