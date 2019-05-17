@@ -13,18 +13,18 @@ import yaml
 def clone(remote, branch_or_tag):
     subprocess.check_call(
         # "--branch" takes both branch names and tags, surprisingly
-        'git clone {} repository --single-branch --branch {} --depth 1'.format(remote, branch_or_tag),
+        'git clone {} . --single-branch --branch {} --depth 1'.format(remote, branch_or_tag),
         shell=True
     )
 
 
 def checkout_revision(revision):
-    subprocess.check_call('git -C repository checkout {}'.format(revision), shell=True)
+    subprocess.check_call('git checkout {}'.format(revision), shell=True)
 
 
 def load_revision():
     return subprocess.check_output(
-        'git -C repository rev-parse --verify HEAD',
+        'git rev-parse --verify HEAD',
         encoding='utf=8',
         shell=True,
     ).strip()
@@ -36,7 +36,6 @@ def schedule(decision_file: str, remote: str, ref: str, revision: Optional[str],
     if revision:
         checkout_revision(revision)
 
-    os.chdir('repository')
     subprocess.check_call('{} {} {}'.format(sys.executable, decision_file, ' '.join(decision_file_arguments)),
                           shell=True)
 
@@ -56,7 +55,7 @@ def schedule_hook(task_id: str, html_url: str, ref: str, revision: str, dry_run:
     else:
         revision = load_revision()
 
-    with open(os.path.join('repository', '.taskcluster.yml'), 'rb') as f:
+    with open('.taskcluster.yml', 'rb') as f:
         taskcluster_yml = yaml.safe_load(f)
 
     # provide a similar JSON-e context to what taskcluster-github provides
