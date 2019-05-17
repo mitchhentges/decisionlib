@@ -37,7 +37,7 @@ def schedule(decision_file: str, remote: str, ref: str, revision: Optional[str],
         checkout_revision(revision)
 
     os.chdir('repository')
-    subprocess.check_call('{} {} {}'.format(sys.executable, decision_file, decision_file_arguments.join(' ')),
+    subprocess.check_call('{} {} {}'.format(sys.executable, decision_file, ' '.join(decision_file_arguments)),
                           shell=True)
 
 
