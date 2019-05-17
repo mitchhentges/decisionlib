@@ -188,7 +188,7 @@ class Scheduler(Generic[T]):
 
     def append_all(self, tasks: List['Task']):
         for task in tasks:
-            self.append(task)
+            task.schedule(self)
 
     def schedule_tasks(
             self,
