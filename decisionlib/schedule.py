@@ -10,12 +10,14 @@ import taskcluster
 import yaml
 
 
-def clone(remote, branch_or_tag):
+def clone_and_cd(html_url, branch_or_tag):
     subprocess.check_call(
         # "--branch" takes both branch names and tags, surprisingly
-        'git clone {} . --single-branch --branch {} --depth 1'.format(remote, branch_or_tag),
+        'git clone {} --single-branch --branch {} --depth 1'.format(html_url, branch_or_tag),
         shell=True
     )
+    repository_directory_name = html_url.split('/')[-1]
+    os.chdir(repository_directory_name)
 
 
 def checkout_revision(revision):
@@ -30,9 +32,15 @@ def load_revision():
     ).strip()
 
 
-def schedule(decision_file: str, remote: str, ref: str, revision: Optional[str], decision_file_arguments: [str]):
+def schedule(decision_file: str, html_url: str, ref: str, revision: Optional[str], decision_file_arguments: [str]):
+    if not html_url.startswith('https://github.com/'):
+        raise ValueError('expected repository to be a GitHub repository (accessed via HTTPs)')
+
+    html_url = html_url[:-4] if html_url.endswith('.git') else html_url
+    html_url = html_url[:-1] if html_url.endswith('/') else html_url
+
     branch_or_tag = ref.split('/')[-1]
-    clone(remote, branch_or_tag)
+    clone_and_cd(html_url, branch_or_tag)
     if revision:
         checkout_revision(revision)
 
@@ -49,7 +57,7 @@ def schedule_hook(task_id: str, html_url: str, ref: str, revision: str, dry_run:
 
     repository_full_name = html_url[len('https://github.com/'):]
     branch_or_tag = ref.split('/')[-1]
-    clone(html_url, branch_or_tag)
+    clone_and_cd(html_url, branch_or_tag)
     if revision:
         checkout_revision(revision)
     else:

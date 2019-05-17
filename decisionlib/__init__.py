@@ -31,7 +31,7 @@ def main():
     ref_group.add_argument('--ref')
     ref_group.add_argument('--tag')
     ref_group.add_argument('--branch')
-    schedule_parser.add_argument('repository')
+    schedule_parser.add_argument('html_url')
     schedule_parser.add_argument('decision_file')
     schedule_parser.add_argument('decision_file_arguments', nargs=argparse.REMAINDER)
 
@@ -42,7 +42,7 @@ def main():
     ref_group.add_argument('--ref')
     ref_group.add_argument('--tag')
     ref_group.add_argument('--branch')
-    hook_parser.add_argument('repository')
+    hook_parser.add_argument('html_url')
     hook_parser.add_argument('task_id')
 
     secret_parser = command_subparser.add_parser('get-secret')
@@ -52,10 +52,10 @@ def main():
     result = parser.parse_args()
     if result.command == 'schedule':
         ref = to_ref(result.ref, result.branch, result.tag)
-        schedule(result.decision_file, result.repository, ref, result.revision, result.decision_file_arguments)
+        schedule(result.decision_file, result.html_url, ref, result.revision, result.decision_file_arguments)
     if result.command == 'schedule-hook':
         ref = to_ref(result.ref, result.branch, result.tag)
-        schedule_hook(result.task_id, result.repository, ref, result.revision, result.dry_run)
+        schedule_hook(result.task_id, result.html_url, ref, result.revision, result.dry_run)
     if result.command == 'get-secret':
         print(fetch_secret(result.secret, result.key))
 
