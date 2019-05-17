@@ -8,9 +8,10 @@ import taskcluster
 import yaml
 
 
-def clone(html_url, branch):
+def clone(remote, branch_or_tag):
     subprocess.check_call(
-        'git clone {} repository --single-branch --branch {} --depth 1'.format(html_url, branch),
+        # "--branch" takes both branch names and tags, surprisingly
+        'git clone {} repository --single-branch --branch {} --depth 1'.format(remote, branch_or_tag),
         shell=True
     )
 
@@ -19,7 +20,7 @@ def checkout_revision(revision):
     subprocess.check_call('git -C repository checkout {}'.format(revision), shell=True)
 
 
-def fetch_revision():
+def load_revision():
     return subprocess.check_output(
         'git -C repository rev-parse --verify HEAD',
         encoding='utf=8',
@@ -27,7 +28,17 @@ def fetch_revision():
     ).strip()
 
 
-def schedule_hook(task_id, html_url, branch, revision, dry_run):
+def schedule(decision_file: str, remote: str, ref: str, revision: str = None):
+    branch_or_tag = ref.split('/')[-1]
+    clone(remote, branch_or_tag)
+    if revision:
+        checkout_revision(revision)
+
+    os.chdir('repository')
+    subprocess.check_call('python {}'.format(decision_file))
+
+
+def schedule_hook(task_id: str, html_url: str, ref: str, revision: str, dry_run: bool):
     if not html_url.startswith('https://github.com/'):
         raise ValueError('expected repository to be a GitHub repository (accessed via HTTPs)')
 
@@ -35,11 +46,12 @@ def schedule_hook(task_id, html_url, branch, revision, dry_run):
     html_url = html_url[:-1] if html_url.endswith('/') else html_url
 
     repository_full_name = html_url[len('https://github.com/'):]
-    clone(html_url, branch)
+    branch_or_tag = ref.split('/')[-1]
+    clone(html_url, branch_or_tag)
     if revision:
         checkout_revision(revision)
     else:
-        revision = fetch_revision()
+        revision = load_revision()
 
     with open(os.path.join('repository', '.taskcluster.yml'), 'rb') as f:
         taskcluster_yml = yaml.safe_load(f)
@@ -66,7 +78,7 @@ def schedule_hook(task_id, html_url, branch, revision, dry_run):
             },
             'release': {
                 'tag_name': revision,
-                'target_commitish': 'refs/heads/{}'.format(branch),
+                'target_commitish': ref,
             },
             'sender': {
                 'login': 'TaskclusterHook',
