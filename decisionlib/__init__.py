@@ -51,7 +51,7 @@ def main():
     result = parser.parse_args()
     if result.command == 'schedule':
         ref = to_ref(result.ref, result.branch, result.tag)
-        print(result.decision_file, result.repository, ref, result.revision)
+        schedule(result.decision_file, result.repository, ref, result.revision)
     if result.command == 'schedule-hook':
         ref = to_ref(result.ref, result.branch, result.tag)
         schedule_hook(result.task_id, result.repository, ref, result.revision, result.dry_run)
