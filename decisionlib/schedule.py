@@ -1,6 +1,7 @@
 import datetime
 import os
 import subprocess
+import sys
 
 import jsone
 import slugid
@@ -35,7 +36,7 @@ def schedule(decision_file: str, remote: str, ref: str, revision: str = None):
         checkout_revision(revision)
 
     os.chdir('repository')
-    subprocess.check_call('python {}'.format(decision_file), shell=True)
+    subprocess.check_call('{} {}'.format(sys.executable, decision_file), shell=True)
 
 
 def schedule_hook(task_id: str, html_url: str, ref: str, revision: str, dry_run: bool):
