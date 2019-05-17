@@ -7,12 +7,13 @@ import re
 
 import arrow
 from git import Repo
-from typing import Optional, Tuple, List, Any, Callable, Union, Dict
+from typing import Optional, Tuple, List, Any, Callable, Union, Dict, Generic, TypeVar
 
 import sys
 import taskcluster
 
 SlugId = str
+T = TypeVar('T')
 
 
 class TrustLevel(Enum):
@@ -22,11 +23,10 @@ class TrustLevel(Enum):
 
 class Trigger:
     def __init__(self, decision_task_id: SlugId, scheduler_id: str,
-                 date: datetime.datetime, level: TrustLevel, owner: str, source: str):
+                 date: datetime.datetime, owner: str, source: str):
         self.decision_task_id = decision_task_id
         self.scheduler_id = scheduler_id
         self.date = date
-        self.level = level
         self.owner = owner
         self.source = source
 
@@ -34,7 +34,7 @@ class Trigger:
     def from_environment():
         """Collects "DECISIONLIB_*" environment variables to create a Trigger
 
-        Assumes that "DECISIONLIB_TASK_ID", "DECISIONLIB_TRUST_LEVEL", "DECISIONLIB_OWNER"
+        Assumes that "DECISIONLIB_TASK_ID", "DECISIONLIB_SCHEDULER_ID", "DECISIONLIB_DATE", "DECISIONLIB_OWNER"
         and "DECISIONLIB_SOURCE" are all set as environment variables
 
         Returns:
@@ -44,15 +44,14 @@ class Trigger:
         decision_task_id = os.environ['DECISIONLIB_DECISION_TASK_ID']
         scheduler_id = os.environ['DECISIONLIB_SCHEDULER_ID']
         date = arrow.get(os.environ['DECISIONLIB_DATE'])
-        level = TrustLevel(int(os.environ['DECISIONLIB_TRUST_LEVEL']))
         owner = os.environ['DECISIONLIB_OWNER']
         source = os.environ['DECISIONLIB_SOURCE']
-        return Trigger(decision_task_id, scheduler_id, date, level, owner, source)
+        return Trigger(decision_task_id, scheduler_id, date, owner, source)
 
     @staticmethod
-    def from_fake(level: TrustLevel = TrustLevel.L1):
+    def from_fake():
         return Trigger('<decision task id>', '<scheduler_id>', datetime.datetime.now(),
-                       level, '<owner>', '<source>')
+                       '<owner>', '<source>')
 
 
 class Checkout:
@@ -153,14 +152,15 @@ def write_cot_files(full_task_graph):
             json.dump({}, f)
 
 
-class Scheduler:
+class Scheduler(Generic[T]):
     """Assigns IDs to tasks and batch-schedules them"""
     _tasks: List[Tuple[SlugId, 'Task']]
     _scheduled: bool
 
-    def __init__(self):
+    def __init__(self, project_config: T = None):
         self._tasks = []
         self._scheduled = False
+        self._project_config = project_config
 
     def __del__(self):
         # When an exception has been thrown, we don't want to print this error message, since
@@ -225,44 +225,39 @@ class Scheduler:
         full_task_graph = {}
 
         for task_id, task in self._tasks:
+            context = ConfigurationContext(task_id, checkout, trigger, self._project_config)
             full_task_graph[task_id] = {
-                'task': queue.create(task_id, task.render(task_id, trigger, checkout))
+                'task': queue.create(task_id, task.render(context))
             }
 
         write_cot_files(full_task_graph)
 
-    def fake_print_tasks(self, level: TrustLevel = TrustLevel.L1):
+    def fake_print_tasks(self):
         """Prints the contents of each task that's been scheduled using fake context information
 
         Should only be used for testing, since this generates fake build information
-
-        Args:
-            level: trust level of the task
 
         Returns:
 
         """
         self._scheduled = True
-        for task_id, task in self.fake_rendered_tasks(level):
+        for task_id, task in self.fake_rendered_tasks():
             print('Task ID: {}'.format(task_id))
             pprint.pprint(task)
             print('----------')
 
-    def fake_rendered_tasks(self, level: TrustLevel = TrustLevel.L1):
+    def fake_rendered_tasks(self):
         """Prints the contents of each task that's been scheduled using fake context information
 
         Should only be used for testing, since this generates fake build information
-
-        Args:
-            level: trust level of the task
 
         Returns:
 
         """
         self._scheduled = True
-        trigger = Trigger.from_fake(level)
+        trigger = Trigger.from_fake()
         checkout = Checkout.from_fake()
-        return [(task_id, task.render(task_id, trigger, checkout))
+        return [(task_id, task.render(ConfigurationContext(task_id, checkout, trigger, self._project_config)))
                 for task_id, task in self._tasks]
 
 
@@ -327,12 +322,15 @@ class Priority(Enum):
     NORMAL = 'normal'
 
 
-class ConfigurationContext:
+class ConfigurationContext(Generic[T]):
     def __init__(
             self,
+            task_id: SlugId,
             checkout: Checkout,
             trigger: Trigger,
+            project_config: T
     ):
+        self.task_id = task_id
         self.ref = checkout.ref
         self.commit = checkout.commit
         self.html_url = checkout.html_url
@@ -340,12 +338,12 @@ class ConfigurationContext:
         self.decision_task_id = trigger.decision_task_id
         self.scheduler_id = trigger.scheduler_id
         self.date = trigger.date
-        self.level = trigger.level
         self.owner = trigger.owner
         self.source = trigger.source
+        self.project_config = project_config
 
 
-class Task:
+class Task(Generic[T]):
     """Base task builder
 
     For an example of how this can be extended, see "ShellTask"
@@ -354,21 +352,21 @@ class Task:
     _task_name: str
     _provisioner_id: str
     _payload: Any
-    _worker_type: Union[Callable[[TrustLevel], str], str]
+    _worker_type: Union[Callable[[ConfigurationContext[T]], str], str]
     _description: str
     _priority: Optional[Priority]
     _treeherder: Optional[Treeherder]
     _routes: List[str]
     _dependencies: List[SlugId]
     _scopes: List[str]
-    _map_functions: List[Callable[['Task', ConfigurationContext], None]]
+    _map_functions: List[Callable[['Task', ConfigurationContext[T]], None]]
     _scheduled: bool
 
     def __init__(
             self,
             task_name: str,
             provisioner_id: str,
-            worker_type: Union[Callable[[TrustLevel], str], str],
+            worker_type: Union[Callable[[ConfigurationContext[T]], str], str],
             payload: Any = None,
     ):
         self._task_name = task_name
@@ -463,7 +461,7 @@ class Task:
         return self.map(lambda task, context: task.with_route(
             'tc-treeherder.v2.{}.{}'.format(context.alias, context.commit)))
 
-    def map(self, configuration: Callable[['Task', ConfigurationContext], None]):
+    def map(self, configuration: Callable[['Task', ConfigurationContext[T]], None]):
         self._map_functions.append(configuration)
         return self
 
@@ -481,41 +479,36 @@ class Task:
 
     def render(
             self,
-            task_id: SlugId,
-            trigger: Trigger,
-            checkout: Checkout,
+            context: ConfigurationContext[T],
     ):
         """Produces raw Taskcluster task definition
 
         Should only be called by Scheduler
 
         Args:
-            task_id: id of task
-            trigger: details around the cause of this build
-            checkout: source control information
+            context: constants for the task, such as the ID of the task and VCS information
 
         Returns:
             dict: raw taskcluster task definition
 
         """
-        context = ConfigurationContext(checkout, trigger)
-        worker_type = self._worker_type(trigger.level)
+        worker_type = self._worker_type(context)
         for map_function in self._map_functions:
             map_function(self, context)
 
         raw_task = {
-            'schedulerId': trigger.scheduler_id,
-            'taskGroupId': trigger.decision_task_id,
+            'schedulerId': context.scheduler_id,
+            'taskGroupId': context.decision_task_id,
             'provisionerId': self._provisioner_id,
             'workerType': worker_type,
             'metadata': {
                 'name': self._task_name,
                 'description': self._description,
-                'owner': trigger.owner,
-                'source': trigger.source,
+                'owner': context.owner,
+                'source': context.source,
             },
             'routes': self._routes,
-            'dependencies': [trigger.decision_task_id] + self._dependencies,
+            'dependencies': [context.decision_task_id] + self._dependencies,
             'scopes': self._scopes,
             'payload': self._payload or {},
             'priority': self._priority.value if self._priority else None,
@@ -602,7 +595,7 @@ class ShellTask(Task):
             self,
             task_name: str,
             provisioner_id: str,
-            worker_type: Union[Callable[[TrustLevel], str], str],
+            worker_type: Union[Callable[[ConfigurationContext[T]], str], str],
             docker_image: str,
             script: str = None,
     ):
@@ -662,9 +655,7 @@ class ShellTask(Task):
 
     def render(
             self,
-            task_id: SlugId,
-            trigger: Trigger,
-            checkout: Checkout,
+            context: ConfigurationContext[T],
     ):
         if self._file_secrets:
             fetch_file_secrets_commands = ['pip install decisionlib-mhentges'] + [
@@ -674,7 +665,8 @@ class ShellTask(Task):
         else:
             fetch_file_secrets_commands = []
 
-        def configuration(task: Task, context: ConfigurationContext):
+        # TODO do without map?
+        def configuration(task: Task, _):
             script = '\n'.join([
                 """
                 export TERM=dumb
@@ -713,7 +705,7 @@ class ShellTask(Task):
             })
 
         self.map(configuration)
-        return super().render(task_id, trigger, checkout)
+        return super().render(context)
 
 
 def mobile_shell_task(
@@ -738,8 +730,8 @@ def mobile_shell_task(
         ShellTask: shell task builder
     """
 
-    def decide_worker_type(level: TrustLevel):
-        return 'mobile-{}-b-{}'.format(level.value, worker_type_suffix)
+    def decide_worker_type(context: ConfigurationContext[TrustLevel]):
+        return 'mobile-{}-b-{}'.format(context.project_config.value, worker_type_suffix)
 
     return ShellTask(
         task_name,
@@ -794,8 +786,8 @@ def mobile_sign_task(
         } for assemble_task_id, apk_paths in upstream_artifacts]
     }
 
-    def decide_worker_type(level: TrustLevel):
-        if level == TrustLevel.L1 and signing_type == SigningType.RELEASE:
+    def decide_worker_type(context: ConfigurationContext[TrustLevel]):
+        if context.project_config == TrustLevel.L1 and signing_type == SigningType.RELEASE:
             raise RuntimeError('Cannot use RELEASE signing type with a trust level of 1')
 
         return 'mobile-signing-dep-v1' if signing_type == SigningType.DEP else 'mobile-signing-v1'
@@ -837,8 +829,8 @@ def mobile_google_play_task(
         } for signing_task_id, apk_paths in upstream_artifacts]
     }
 
-    def decide_worker_type(level: TrustLevel):
-        return 'mobile-pushapk-dep-v1' if level == TrustLevel.L1 else 'mobile-pushapk-v1'
+    def decide_worker_type(context: ConfigurationContext[TrustLevel]):
+        return 'mobile-pushapk-dep-v1' if context.project_config == TrustLevel.L1 else 'mobile-pushapk-v1'
 
     return Task(task_name, 'scriptworker-prov-v1', decide_worker_type, payload) \
         .with_dependencies([signing_task_id for signing_task_id, _ in upstream_artifacts]) \
@@ -846,7 +838,7 @@ def mobile_google_play_task(
         lambda task, context: task.with_scopes([
             'project:mobile:{alias}:releng:googleplay:product:{alias}{type}'.format(
                 alias=context.alias,
-                type=':dep' if context.level == TrustLevel.L1 else ''
+                type=':dep' if context.project_config == TrustLevel.L1 else ''
             )
         ]))
 
