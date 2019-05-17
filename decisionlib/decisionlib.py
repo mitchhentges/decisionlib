@@ -232,6 +232,25 @@ class Scheduler(Generic[T]):
 
         write_cot_files(full_task_graph)
 
+    def schedule_tasks_from_environment(self):
+        """Schedules all tasks, inferring configuration from the environment
+
+        Submits all tasks to Taskcluster in the order that they were provided to the scheduler. Additionally, the
+        necessary Chain of Trust files will be created.
+
+        Checks the environment for how to submit tasks to taskcluster (auth from environment variables), the
+        revision/ref of the source (from git information on the file system) and metadata about
+        this build (from DECISIONLIB_... environment variables)
+
+        :return:
+        """
+
+        self.schedule_tasks(
+            TaskclusterQueue.from_environment(),
+            Checkout.from_environment(),
+            Trigger.from_environment()
+        )
+
     def fake_print_tasks(self):
         """Prints the contents of each task that's been scheduled using fake context information
 
@@ -665,46 +684,42 @@ class ShellTask(Task):
         else:
             fetch_file_secrets_commands = []
 
-        # TODO do without map?
-        def configuration(task: Task, _):
-            script = '\n'.join([
-                """
-                export TERM=dumb
-                git init /tmp/build
-                cd /tmp/build
-                git fetch {url} {ref}
-                git config advice.detachedHead false
-                git checkout FETCH_HEAD
-                """.format(url=context.html_url, ref=context.ref),
-                """
-                apt install -y python3-pip
-                shopt -s expand_aliases
-                alias pip=pip3
-                alias python=python3
-                """ if self._install_python_3 else '',
-                *fetch_file_secrets_commands,
-                *self._scripts
-            ])
-            script = re.sub('\n\\s+', '\n', script).strip()  # de-indent
+        script = '\n'.join([
+            """
+            export TERM=dumb
+            git init /tmp/build
+            cd /tmp/build
+            git fetch {url} {ref}
+            git config advice.detachedHead false
+            git checkout FETCH_HEAD
+            """.format(url=context.html_url, ref=context.ref),
+            """
+            apt install -y python3-pip
+            shopt -s expand_aliases
+            alias pip=pip3
+            alias python=python3
+            """ if self._install_python_3 else '',
+            *fetch_file_secrets_commands,
+            *self._scripts
+        ])
+        script = re.sub('\n\\s+', '\n', script).strip()  # de-indent
 
-            task.with_payload({
-                'maxRunTime': 86400,
-                'features': {
-                    'chainOfTrust': True if self._artifacts else False,
-                    'taskclusterProxy': True if self._file_secrets else False,
-                },
-                'image': self._docker_image,
-                'command': ['/bin/bash', '--login', '-cxe', script],
-                'artifacts': {
-                    artifact.taskcluster_path: {
-                        'type': artifact.type.value,
-                        'path': '/tmp/build/{}'.format(artifact.relative_fs_path),
-                    }
-                    for artifact in self._artifacts
+        self.with_payload({
+            'maxRunTime': 86400,
+            'features': {
+                'chainOfTrust': True if self._artifacts else False,
+                'taskclusterProxy': True if self._file_secrets else False,
+            },
+            'image': self._docker_image,
+            'command': ['/bin/bash', '--login', '-cxe', script],
+            'artifacts': {
+                artifact.taskcluster_path: {
+                    'type': artifact.type.value,
+                    'path': '/tmp/build/{}'.format(artifact.relative_fs_path),
                 }
-            })
-
-        self.map(configuration)
+                for artifact in self._artifacts
+            }
+        })
         return super().render(context)
 
 
