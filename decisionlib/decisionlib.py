@@ -232,7 +232,7 @@ class Scheduler(Generic[T]):
 
         write_cot_files(full_task_graph)
 
-    def schedule_tasks_from_environment(self):
+    def schedule_tasks_with_environment_config(self):
         """Schedules all tasks, inferring configuration from the environment
 
         Submits all tasks to Taskcluster in the order that they were provided to the scheduler. Additionally, the
