@@ -26,13 +26,14 @@ def main():
     command_subparser.required = True
 
     schedule_parser = command_subparser.add_parser('schedule')
-    schedule_parser.add_argument('decision_file')
-    schedule_parser.add_argument('repository')
     schedule_parser.add_argument('--revision')
     ref_group = schedule_parser.add_mutually_exclusive_group()
     ref_group.add_argument('--ref')
     ref_group.add_argument('--tag')
     ref_group.add_argument('--branch')
+    schedule_parser.add_argument('decision_file')
+    schedule_parser.add_argument('repository')
+    schedule_parser.add_argument('decision_file_arguments', nargs=argparse.REMAINDER)
 
     hook_parser = command_subparser.add_parser('schedule-hook')
     hook_parser.add_argument('task_id')
@@ -51,7 +52,7 @@ def main():
     result = parser.parse_args()
     if result.command == 'schedule':
         ref = to_ref(result.ref, result.branch, result.tag)
-        schedule(result.decision_file, result.repository, ref, result.revision)
+        schedule(result.decision_file, result.repository, ref, result.revision, result.decision_file_arguments)
     if result.command == 'schedule-hook':
         ref = to_ref(result.ref, result.branch, result.tag)
         schedule_hook(result.task_id, result.repository, ref, result.revision, result.dry_run)

@@ -2,6 +2,7 @@ import datetime
 import os
 import subprocess
 import sys
+from typing import Optional
 
 import jsone
 import slugid
@@ -29,14 +30,15 @@ def load_revision():
     ).strip()
 
 
-def schedule(decision_file: str, remote: str, ref: str, revision: str = None):
+def schedule(decision_file: str, remote: str, ref: str, revision: Optional[str], decision_file_arguments: [str]):
     branch_or_tag = ref.split('/')[-1]
     clone(remote, branch_or_tag)
     if revision:
         checkout_revision(revision)
 
     os.chdir('repository')
-    subprocess.check_call('{} {}'.format(sys.executable, decision_file), shell=True)
+    subprocess.check_call('{} {} {}'.format(sys.executable, decision_file, decision_file_arguments.join(' ')),
+                          shell=True)
 
 
 def schedule_hook(task_id: str, html_url: str, ref: str, revision: str, dry_run: bool):
