@@ -155,11 +155,11 @@ def write_cot_files(full_task_graph):
 class Scheduler(Generic[T]):
     """Assigns IDs to tasks and batch-schedules them"""
     _tasks: List[Tuple[SlugId, 'Task']]
-    _scheduled: bool
+    _rendered: bool
 
     def __init__(self, project_config: T = None):
         self._tasks = []
-        self._scheduled = False
+        self._rendered = False
         self._project_config = project_config
 
     def __del__(self):
@@ -167,9 +167,9 @@ class Scheduler(Generic[T]):
         # the exception might've been thrown before the tasks were scheduled.
         # Fortunately, to detect this, we can use `is_finalizing()` since it is True when an
         # exception was thrown and is False here otherwise
-        if not self._scheduled and not sys.is_finalizing():
+        if not self._rendered and not sys.is_finalizing():
             print('A Scheduler was created, but the tasks were never scheduled. Perhaps you '
-                  'forgot to call ".schedule_tasks(...)" (or ".print_tasks(...)")?',
+                  'forgot to call ".schedule_tasks(...)" (or otherwise use the scheduler)?',
                   file=sys.stderr)
 
     def append(self, task: 'Task'):
@@ -190,12 +190,22 @@ class Scheduler(Generic[T]):
         for task in tasks:
             task.schedule(self)
 
+    def rendered_tasks(
+            self,
+            checkout: Checkout,
+            trigger: Trigger,
+    ):
+        self._rendered = True
+        return [(task_id, task.render(ConfigurationContext(task_id, checkout, trigger, self._project_config)))
+                for task_id, task in self._tasks]
+
     def schedule_tasks(
             self,
             queue: TaskclusterQueue,
             checkout: Checkout,
             trigger: Trigger,
-            write_cot_files: Callable[[Dict], None] = write_cot_files
+            debug: bool = False,
+            write_cot_files: Callable[[Dict], None] = write_cot_files,
     ):
         """Schedules all tasks in the order that they were provided to the scheduler
 
@@ -214,6 +224,7 @@ class Scheduler(Generic[T]):
             queue: taskcluster queue to append tasks to
             trigger: the details of the action that triggered this build
             checkout: source control information for the current revision
+            debug: print tasks before they're scheduled
             write_cot_files: method of encoding Chain of Trust files (by default, writes to
                 task-graph.json, actions.json and parameters.yml)
 
@@ -221,18 +232,22 @@ class Scheduler(Generic[T]):
 
         """
 
-        self._scheduled = True
+        self._rendered = True
         full_task_graph = {}
 
-        for task_id, task in self._tasks:
-            context = ConfigurationContext(task_id, checkout, trigger, self._project_config)
+        for task_id, rendered_task in self.rendered_tasks(checkout, trigger):
+            if debug:
+                print('Task ID: {}'.format(task_id))
+                pprint.pprint(rendered_task)
+                print('----------')
+
             full_task_graph[task_id] = {
-                'task': queue.create(task_id, task.render(context))
+                'task': queue.create(task_id, rendered_task)
             }
 
         write_cot_files(full_task_graph)
 
-    def schedule_tasks_with_environment_config(self):
+    def schedule_tasks_using_environment(self, debug: bool = False):
         """Schedules all tasks, inferring configuration from the environment
 
         Submits all tasks to Taskcluster in the order that they were provided to the scheduler. Additionally, the
@@ -242,13 +257,17 @@ class Scheduler(Generic[T]):
         revision/ref of the source (from git information on the file system) and metadata about
         this build (from DECISIONLIB_... environment variables)
 
-        :return:
+        Args:
+            debug: print tasks before they're scheduled
+
+        Returns:
         """
 
         self.schedule_tasks(
             TaskclusterQueue.from_environment(),
             Checkout.from_environment(),
-            Trigger.from_environment()
+            Trigger.from_environment(),
+            debug,
         )
 
     def fake_print_tasks(self):
@@ -259,25 +278,13 @@ class Scheduler(Generic[T]):
         Returns:
 
         """
-        self._scheduled = True
-        for task_id, task in self.fake_rendered_tasks():
+        self._rendered = True
+        trigger = Trigger.from_fake()
+        checkout = Checkout.from_fake()
+        for task_id, task in self.rendered_tasks(checkout, trigger):
             print('Task ID: {}'.format(task_id))
             pprint.pprint(task)
             print('----------')
-
-    def fake_rendered_tasks(self):
-        """Prints the contents of each task that's been scheduled using fake context information
-
-        Should only be used for testing, since this generates fake build information
-
-        Returns:
-
-        """
-        self._scheduled = True
-        trigger = Trigger.from_fake()
-        checkout = Checkout.from_fake()
-        return [(task_id, task.render(ConfigurationContext(task_id, checkout, trigger, self._project_config)))
-                for task_id, task in self._tasks]
 
 
 class TreeherderJobKind(Enum):
