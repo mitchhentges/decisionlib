@@ -1,4 +1,4 @@
-from decisionlib.decisionlib import ShellTaskfrom decisionlib.decisionlib import ShellTask# `decisionlib`
+# `decisionlib`
 
 Taskcluster utility library for building reusable tasks.
 
