@@ -29,10 +29,7 @@ def main():
         .with_route('index.project.mobile.fenix.release.latest') \
         .schedule(scheduler)
 
-    queue = TaskclusterQueue.from_environment()
-    trigger = Trigger.from_environment()
-    checkout = Checkout.from_environment()
-    scheduler.schedule_tasks(queue, checkout, trigger)
+    scheduler.schedule_tasks_using_environment()
 ```
 
 ## Within hook
@@ -49,13 +46,15 @@ Update `payload.command`  of your hook to run `pip install decisionlib && decisi
 
 1. `pip install decisionlib-mhentges`
 2. Write your python decision task to schedule tasks
-3. Run your python script on Taskcluster, such as with a hook ([such as this `reference-browser` staging hook](https://tools.taskcluster.net/hooks/project-mobile/reference-browser-nightly-staging))
+3. Run your python script on Taskcluster, such as with a hook
 
 ### Creating your own task types
 
 If your task type always runs as a script within a Docker image, you should extend `ShellTask` (example below).
 Otherwise, if your task type revolves around a particular worker type with a payload (e.g.: for `mobile-pushapk` tasks),
 you probably want to extend the base `Task`.
+
+For example, to make usage of Maven tasks more reusable, you might create a "MavenShellTask" such as shown below.
 
 ```python
 from typing import Optional
